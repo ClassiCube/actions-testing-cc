@@ -22,9 +22,7 @@ jobs:
     if: ${{ always() && (needs.build.result == 'failure') }}
     steps:
       - name: Notify failure
-        uses: appleboy/discord-action@master
-        with:
-          webhook_id: ${{ secrets.WEBHOOK_ID }}
-          webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
-          username: Actions buildbot
-          args: Failed to build latest commit for 3DS
+        run:
+          apt update
+          apt install curl
+          curl ${{ secrets.WEBHOOK_URL }} -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST --data "{\"username\": \"CC BuildBot\", \"avatar_url\": \"https://static.classicube.net/img/cc-cube-small.png\", \"content\": \"Failed to compile 3DS build\" }"
