@@ -87,7 +87,7 @@ ifeq ($(PLAT),haiku)
 OBJECTS+=src/interop_BeOS.o
 CFLAGS=-g -pipe -fno-math-errno
 LDFLAGS=-g
-LIBS=-lm -lexecinfo -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
+LIBS=-lm -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
 endif
 
 ifeq ($(PLAT),beos)
@@ -108,9 +108,9 @@ endif
 
 ifeq ($(PLAT),psp)
 CC=psp-gcc
-CFLAGS=-g -pipe -fno-math-errno -I ${PSPSDK}/psp/sdk/include
+CFLAGS=-g -pipe -fno-math-errno -I ${PSPDEV}/psp/sdk/include
 LIBS=-lm -lpspgum -lpspgu -lpspge -lpspdisplay -lpspctrl
-LDFLAGS=-g -L  ${PSPSDK}/psp/sdk/lib
+LDFLAGS=-g -L ${PSPDEV}/psp/sdk/lib
 endif
 
 ifeq ($(OS),Windows_NT)
