@@ -1,4 +1,4 @@
-C_SOURCES:=$(wildcard src/*.c)
+C_SOURCES:=$(wildcard *.c)
 C_OBJECTS:=$(patsubst %.c, %.o, $(C_SOURCES))
 OBJECTS:=$(C_OBJECTS)
 ENAME=ClassiCube
@@ -53,7 +53,7 @@ LDFLAGS=-rdynamic -framework Carbon -framework AGL -framework OpenGL -framework 
 endif
 
 ifeq ($(PLAT),mac_x64)
-OBJECTS+=src/interop_cocoa.o
+OBJECTS+=interop_cocoa.o
 CFLAGS=-g -m64 -pipe -fno-math-errno
 LIBS=
 LDFLAGS=-rdynamic -framework Cocoa -framework OpenGL -framework IOKit -lobjc
@@ -84,31 +84,18 @@ LIBS=-lexecinfo -lGL -lX11 -lXi -lm -lpthread
 endif
 
 ifeq ($(PLAT),haiku)
-OBJECTS+=src/interop_BeOS.o
+OBJECTS+=Window_Haiku.o
 CFLAGS=-g -pipe -fno-math-errno
 LDFLAGS=-g
 LIBS=-lm -lexecinfo -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
-endif
-
-ifeq ($(PLAT),beos)
-OBJECTS+=src/interop_BeOS.o
-CFLAGS=-g -pipe
-LDFLAGS=-g
-LIBS=-lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
 endif
 
 ifeq ($(PLAT),serenityos)
 LIBS=-lgl -lSDL2
 endif
 
-ifeq ($(PLAT),irix)
-CC=gcc
-LIBS=-lGL -lX11 -lXi -lm -lpthread -ldl
-endif
-
 ifeq ($(PLAT),psp)
 CC=psp-gcc
-LIBS=-lm -lpspgum -lpspgu -lpspge -lpspdisplay -lpspctrl
 endif
 
 ifeq ($(OS),Windows_NT)
@@ -139,21 +126,11 @@ dragonfly:
 	$(MAKE) $(ENAME) PLAT=dragonfly
 haiku:
 	$(MAKE) $(ENAME) PLAT=haiku
-beos:
-	$(MAKE) $(ENAME) PLAT=beos
 serenityos:
 	$(MAKE) $(ENAME) PLAT=serenityos
-irix:
-	$(MAKE) $(ENAME) PLAT=irix
 psp:
-	$(MAKE) ClassiCube.elf PLAT=psp
-3ds:
-	$(MAKE) -f src/Makefile_3DS PLAT=3ds
-wii:
-	$(MAKE) -f src/Makefile_wii PLAT=wii
-gamecube:
-	$(MAKE) -f Makefile_gamecube PLAT=gamecube
-	
+	$(MAKE) $(ENAME) PLAT=psp
+
 clean:
 	$(DEL) $(OBJECTS)
 
@@ -163,13 +140,8 @@ $(ENAME): $(OBJECTS)
 $(C_OBJECTS): %.o : %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 	
-src/interop_cocoa.o: src/interop_cocoa.m
+interop_cocoa.o: interop_cocoa.m
 	$(CC) $(CFLAGS) -c $< -o $@
 	
-src/interop_BeOS.o: src/interop_BeOS.cpp
+Window_Haiku.o: Window_Haiku.cpp
 	$(CC) $(CFLAGS) -c $< -o $@
-	
-# PSP requires fixups
-ClassiCube.elf : $(ENAME)
-	cp $(ENAME) ClassiCube.elf
-	psp-fixup-imports ClassiCube.elf
