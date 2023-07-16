@@ -15,7 +15,7 @@ jobs:
       - name: Compile
         run: |
           cd src        
-          x86_64-unknown-haiku-gcc *.c interop_BeOS.cpp -o ClassiCube-haiku -O1 -s -fno-stack-protector -fno-math-errno -Qn -lm -lexecinfo -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
+          x86_64-unknown-haiku-gcc *.c interop_BeOS.cpp -o ClassiCube-haiku -O1 -s -fno-stack-protector -fno-math-errno -Qn -lm -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
 
   notify-failure:
     runs-on: ubuntu-20.04

@@ -14,14 +14,7 @@
 
 static void* xfb;
 static GXRModeObj* rmode;
-
 void* Window_XFB;
-
-
-int evctr = 0;
-void countevs(int chan, const WPADData *data) {
-	evctr++;
-}
 
 void Window_Init(void) {
 	// Initialise the video system
@@ -181,6 +174,11 @@ void Window_ProcessEvents(double delta) {
    }
 
    Pointer_SetPosition(0, x, y);
+}
+
+static int evctr = 0;
+static void countevs(int chan, const WPADData *data) {
+	evctr++;
 }
 
 static void Cursor_GetRawPos(int* x, int* y) {
