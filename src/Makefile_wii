@@ -29,7 +29,7 @@ LIBPATHS	:= -L$(LIBOGC_LIB)
 # options for code generation
 #---------------------------------------------------------------------------------
 DEPSDIR	:=	$(CURDIR)/build
-CFLAGS	=	-g -O2 -Wall $(MACHDEP) $(INCLUDE)
+CFLAGS	=	-g -O1 -Wall $(MACHDEP) $(INCLUDE)
 LDFLAGS	=	-g $(MACHDEP) -Wl,-Map,$(notdir $@).map
 LIBS	:=	-lwiikeyboard -lwiiuse -lbte -lfat -logc -lm
 LD		:=	$(CC)
