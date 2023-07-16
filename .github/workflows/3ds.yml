@@ -2,7 +2,7 @@ name: Build latest (3DS)
 on: [push]
 
 concurrency:
-  group: ${{ github.ref }}
+  group: ${{ github.ref }}-3ds
   cancel-in-progress: true
 
 jobs:
