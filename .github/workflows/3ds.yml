@@ -21,10 +21,10 @@ jobs:
     needs: [build]
     if: ${{ always() && (needs.build.result == 'failure') }}
     steps:
-    - uses: appleboy/discord-action@master
-    - name: Notify failure
-      with:
-        webhook_id: ${{ secrets.WEBHOOK_ID }}
-        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
-        username: Actions buildbot
-        args: The ${{ github.event_name }} event triggered first step.
+      - name: Notify failure
+        uses: appleboy/discord-action@master
+        with:
+          webhook_id: ${{ secrets.WEBHOOK_ID }}
+          webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
+          username: Actions buildbot
+          args: Failed to build latest commit for 3DS
