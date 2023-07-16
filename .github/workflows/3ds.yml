@@ -6,12 +6,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  console_3DS:
+  build:
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitarm:latest
     steps:
       - uses: actions/checkout@v3
-      - name: Build
+      - name: Compile
         run: |
           make 3ds
+
+  notify-failure:
+    runs-on: ubuntu-20.04
+    needs: [build]
+    if: ${{ always() && (needs.build.result == 'failure') }}
+    steps:
+    - uses: appleboy/discord-action@master
+    - name: Notify failure
+      with:
+        webhook_id: ${{ secrets.WEBHOOK_ID }}
+        webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
+        username: Actions buildbot
+        args: The ${{ github.event_name }} event triggered first step.
