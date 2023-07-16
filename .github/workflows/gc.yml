@@ -1,0 +1,16 @@
+name: Build latest (GameCube)
+on: [push]
+
+concurrency:
+  cancel-in-progress: true
+
+jobs:
+  console_GameCube:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitppc:latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: |
+          make gamecube

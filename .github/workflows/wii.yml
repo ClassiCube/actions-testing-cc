@@ -1,0 +1,16 @@
+name: Build latest (Wii)
+on: [push]
+
+concurrency:
+  cancel-in-progress: true
+
+jobs:
+  console_Wii:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitppc:latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: |
+          make wii
