@@ -1,0 +1,31 @@
+name: Build latest (Webclient)
+on: [push]
+
+concurrency:
+  group: ${{ github.ref }}-webclient
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+    steps:
+      - name: Setup emsdk
+        uses: mymindstorm/setup-emsdk@v11
+        with:
+          version: 1.38.40
+          actions-cache-folder: 'emsdk-cache'
+      - uses: actions/checkout@v3
+      - name: Compile
+        run: |
+          emcc *.c -O1 -o ClassiCube.js --js-library interop_web.js -s WASM=0 -s LEGACY_VM_SUPPORT=1 -s ALLOW_MEMORY_GROWTH=1 -s ABORTING_MALLOC=0 -s ENVIRONMENT=web
+          sed -i 's#eventHandler.useCapture);#{ useCapture: eventHandler.useCapture, passive: false });#g' ClassiCube.js
+
+  notify-failure:
+    needs: [build]
+    if: ${{ always() && (needs.build.result == 'failure') }}
+    uses: ./.github/workflows/notify_failure.yml
+    with:
+      WEBHOOK_MESSAGE: 'Failed to compile webclient build'
+    secrets: inherit
