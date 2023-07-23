@@ -17,10 +17,10 @@ jobs:
           make psp
 
   notify-failure:
-    runs-on: ubuntu-20.04
     needs: [build]
     if: ${{ always() && (needs.build.result == 'failure') }}
-    steps:
-      - name: Notify failure
-        run: |
-          curl ${{ secrets.WEBHOOK_URL }} -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST --data "{\"username\": \"CC BuildBot\", \"avatar_url\": \"https://static.classicube.net/img/cc-cube-small.png\", \"content\": \"Failed to compile PSP build\" }"
+    uses: ./.github/workflows/notify-failure.yml
+    secrets:
+      inheret: true
+    inputs:
+      WEBHOOK_MESSAGE: 'Failed to compile PSP build'

@@ -18,10 +18,10 @@ jobs:
           x86_64-unknown-haiku-gcc *.c interop_BeOS.cpp -o ClassiCube-haiku -O1 -s -fno-stack-protector -fno-math-errno -Qn -lm -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
 
   notify-failure:
-    runs-on: ubuntu-20.04
     needs: [build]
     if: ${{ always() && (needs.build.result == 'failure') }}
-    steps:
-      - name: Notify failure
-        run: |
-          curl ${{ secrets.WEBHOOK_URL }} -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST --data "{\"username\": \"CC BuildBot\", \"avatar_url\": \"https://static.classicube.net/img/cc-cube-small.png\", \"content\": \"Failed to compile Haiku build\" }"
+    uses: ./.github/workflows/notify-failure.yml
+    secrets:
+      inheret: true
+    inputs:
+      WEBHOOK_MESSAGE: 'Failed to compile Haiku build'

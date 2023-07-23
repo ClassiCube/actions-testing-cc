@@ -1,0 +1,28 @@
+on:
+  workflow_call:
+    inputs:
+      BOT_USERNAME:
+        description: 'Username to use for the discord bot message'
+        default: 'CC BuildBot'
+        required: false
+        type: string
+      BOT_AVATAR:
+        description: 'URL to use for the avatar of the discord bot message'
+        default: 'https://static.classicube.net/img/cc-cube-small.png'
+        required: false
+        type: string
+      WEBHOOK_MESSAGE:
+        required: true
+        type: string
+    secrets:
+      WEBHOOK_URL:
+        required: true
+        type: string
+
+jobs:
+  notify-failure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify failure
+        run: |
+          curl ${{ secrets.WEBHOOK_URL }} -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST --data "{\"username\": \"${{ inputs.BOT_USERNAME }}\", \"avatar_url\": \"${{ inputs.BOT_AVATAR }}\", \"content\": \"{{ inputs.WEBHOOK_MESSAGE }}\" }"
