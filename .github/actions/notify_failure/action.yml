@@ -11,7 +11,8 @@ inputs:
     default: 'https://static.classicube.net/img/cc-cube-small.png'
     required: false
     type: string
-  WEBHOOK_MESSAGE:
+  NOTIFY_MESSAGE:
+    description: 'Notification message to send'
     required: true
     type: string
 secrets:
@@ -23,4 +24,4 @@ runs:
   steps:
     - name: Notify failure
       run: |
-        curl ${{ secrets.WEBHOOK_URL }} -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST --data "{\"username\": \"${{ inputs.BOT_USERNAME }}\", \"avatar_url\": \"${{ inputs.BOT_AVATAR }}\", \"content\": \"${{ inputs.WEBHOOK_MESSAGE }}\" }"
+        curl ${{ secrets.WEBHOOK_URL }} -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST --data "{\"username\": \"${{ inputs.BOT_USERNAME }}\", \"avatar_url\": \"${{ inputs.BOT_AVATAR }}\", \"content\": \"${{ inputs.NOTIFY_MESSAGE }}\" }"

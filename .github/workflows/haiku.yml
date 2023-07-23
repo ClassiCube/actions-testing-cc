@@ -20,7 +20,9 @@ jobs:
   notify-failure:
     needs: [build]
     if: ${{ always() && (needs.build.result == 'failure') }}
-    uses: ./.github/actions/notify_failure
-    with:
-      WEBHOOK_MESSAGE: 'Failed to compile Haiku build'
-    secrets: inherit
+    steps:
+      - uses: actions/checkout@v3 # Necessary to access local action
+      - uses: ./.github/actions/notify_failure
+        with:
+          NOTIFY_MESSAGE: 'Failed to compile Haiku build'
+        secrets: inherit
