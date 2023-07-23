@@ -17,6 +17,7 @@ jobs:
           make psp
 
   notify-failure:
+    runs-on: ubuntu-latest
     needs: [build]
     if: ${{ always() && (needs.build.result == 'failure') }}
     steps:
@@ -24,4 +25,3 @@ jobs:
       - uses: ./.github/actions/notify_failure
         with:
           NOTIFY_MESSAGE: 'Failed to compile PSP build'
-        secrets: inherit
