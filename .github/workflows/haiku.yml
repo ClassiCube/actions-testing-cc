@@ -23,5 +23,4 @@ jobs:
     uses: ./.github/workflows/notify_failure.yml
     with:
       WEBHOOK_MESSAGE: 'Failed to compile Haiku build'
-    secrets:
-      inherit: true
+    secrets: inherit

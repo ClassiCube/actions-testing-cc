@@ -17,7 +17,6 @@ on:
     secrets:
       WEBHOOK_URL:
         required: true
-        type: string
 
 jobs:
   notify-failure:

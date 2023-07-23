@@ -22,5 +22,4 @@ jobs:
     uses: ./.github/workflows/notify_failure.yml
     with:
       WEBHOOK_MESSAGE: 'Failed to compile 3DS build'
-    secrets:
-      inherit: true
+    secrets: inherit
