@@ -19,7 +19,7 @@ jobs:
   notify-failure:
     needs: [build]
     if: ${{ always() && (needs.build.result == 'failure') }}
-    uses: ./.github/workflows/notify_failure.yml
+    uses: ./.github/actions/notify_failure.yml
     with:
       WEBHOOK_MESSAGE: 'Failed to compile PSP build'
     secrets: inherit
