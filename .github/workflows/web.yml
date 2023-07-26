@@ -37,3 +37,4 @@ jobs:
       - uses: ./.github/actions/notify_failure
         with:
           NOTIFY_MESSAGE: 'Failed to compile webclient build'
+          WEBHOOK_URL: '${{ secrets.secrets.WEBHOOK_URL }}'

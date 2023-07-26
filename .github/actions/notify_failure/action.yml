@@ -15,13 +15,15 @@ inputs:
     description: 'Notification message to send'
     required: true
     type: string
-secrets:
   WEBHOOK_URL:
+    description: 'Discord webhook URL'
     required: true
+    type: string
 
 runs:
   using: "composite"
   steps:
     - name: Notify failure
+      shell: sh
       run: |
-        curl ${{ secrets.WEBHOOK_URL }} -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST --data "{\"username\": \"${{ inputs.BOT_USERNAME }}\", \"avatar_url\": \"${{ inputs.BOT_AVATAR }}\", \"content\": \"${{ inputs.NOTIFY_MESSAGE }}\" }"
+        curl ${{ inputs.WEBHOOK_URL }} -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST --data "{\"username\": \"${{ inputs.BOT_USERNAME }}\", \"avatar_url\": \"${{ inputs.BOT_AVATAR }}\", \"content\": \"${{ inputs.NOTIFY_MESSAGE }}\" }"
