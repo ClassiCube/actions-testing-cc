@@ -13,17 +13,19 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Compile
+        continue-on-error: true
         run: |
           cd src        
           x86_64-unknown-haiku-gcc *.c interop_BeOS.cpp -o ClassiCube-haiku -O1 -s -fno-stack-protector -fno-math-errno -Qn -lm -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
 
-  notify-failure:
-    runs-on: ubuntu-latest
-    needs: [build]
-    if: ${{ always() && (needs.build.result == 'failure') }}
-    steps:
-      - uses: actions/checkout@v3 # Necessary to access local action
       - uses: ./.github/actions/notify_failure
+        if: ${{ steps.build.outputs.status == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile Haiku build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ steps.build.outputs.status == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-haiku'
+          DEST_NAME: 'latest/Haiku'
