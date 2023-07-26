@@ -28,11 +28,11 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube-Wii'
-          DEST_NAME: 'latest/wii/ClassiCube'
+          SOURCE_FILE: 'ClassiCube-wii.elf'
+          DEST_NAME: 'latest/wii/ClassiCube.elf'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube-GameCube'
-          DEST_NAME: 'latest/gamecube/ClassiCube'
+          SOURCE_FILE: 'ClassiCube-wii.dol'
+          DEST_NAME: 'latest/wii/ClassiCube.dol'

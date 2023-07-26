@@ -6,7 +6,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-3ds:
+  build-haiku:
     runs-on: ubuntu-latest
     container:
       image: haiku/cross-compiler:x86_64-r1beta4
