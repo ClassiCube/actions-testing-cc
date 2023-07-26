@@ -20,19 +20,19 @@ jobs:
           make gamecube
 
       - uses: ./.github/actions/notify_failure
-        if: ${{ always() && steps.compile.outputs.status == 'failure' }}
+        if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile Wii/Gamecube build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
       - uses: ./.github/actions/upload_build
-        if: ${{ always() && steps.compile.outputs.status == 'success' }}
+        if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-Wii'
           DEST_NAME: 'latest/wii/ClassiCube'
           
       - uses: ./.github/actions/upload_build
-        if: ${{ always() && steps.compile.outputs.status == 'success' }}
+        if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-GameCube'
           DEST_NAME: 'latest/gamecube/ClassiCube'
