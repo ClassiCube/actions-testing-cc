@@ -20,13 +20,19 @@ jobs:
           x86_64-unknown-haiku-gcc *.c interop_BeOS.cpp -o ClassiCube-haiku -O1 -s -fno-stack-protector -fno-math-errno -Qn -lm -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
 
       - uses: ./.github/actions/notify_failure
-        if: always() && ${{ steps.compile.outputs.status == 'failure' }}
+        if: ${{ always() && steps.compile.outputs.status == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile Haiku build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
       - uses: ./.github/actions/upload_build
-        if: always() && ${{ steps.compile.outputs.status == 'success' }}
+        if: ${{ always() && steps.compile.outputs.status == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-haiku'
           DEST_NAME: 'latest/haiku/ClassiCube'
+          
+      - name: Dump steps context
+        if: ${{ always() }}
+        env:
+          STEPS_CONTEXT: ${{ toJson(steps) }}
+        run: echo "$STEPS_CONTEXT"

@@ -18,13 +18,13 @@ jobs:
           make psp
 
       - uses: ./.github/actions/notify_failure
-        if: always() && ${{ steps.compile.outputs.status == 'failure' }}
+        if: ${{ always() && steps.compile.outputs.status == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile PSP build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
       - uses: ./.github/actions/upload_build
-        if: always() && ${{ steps.compile.outputs.status == 'success' }}
+        if: ${{ always() && steps.compile.outputs.status == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-psp'
           DEST_NAME: 'latest/psp/ClassiCube'
