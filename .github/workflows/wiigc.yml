@@ -12,26 +12,27 @@ jobs:
       image: devkitpro/devkitppc:latest
     steps:
       - uses: actions/checkout@v3
-      - name: compile
+      - name: Compile Wii and GameCube build
+        id: compile
         run: |
           make wii
           make clean
           make gamecube
 
       - uses: ./.github/actions/notify_failure
-        if: ${{ steps.compile.outputs.status == 'failure' }}
+        if: always() && ${{ steps.compile.outputs.status == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile Wii/Gamecube build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
       - uses: ./.github/actions/upload_build
-        if: ${{ steps.compile.outputs.status == 'success' }}
+        if: always() && ${{ steps.compile.outputs.status == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-Wii'
           DEST_NAME: 'latest/wii/ClassiCube'
           
       - uses: ./.github/actions/upload_build
-        if: ${{ steps.compile.outputs.status == 'success' }}
+        if: always() && ${{ steps.compile.outputs.status == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-GameCube'
           DEST_NAME: 'latest/gamecube/ClassiCube'

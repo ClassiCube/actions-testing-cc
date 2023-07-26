@@ -12,18 +12,19 @@ jobs:
       image: devkitpro/devkitarm:latest
     steps:
       - uses: actions/checkout@v3
-      - name: compile
+      - name: Compile 3DS build
+        id: compile
         run: |
           make 3ds
 
       - uses: ./.github/actions/notify_failure
-        if: ${{ steps.compile.outputs.status == 'failure' }}
+        if: always() && ${{ steps.compile.outputs.status == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile 3DS build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
       - uses: ./.github/actions/upload_build
-        if: ${{ steps.compile.outputs.status == 'success' }}
+        if: always() && ${{ steps.compile.outputs.status == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-3ds'
           DEST_NAME: 'latest/3ds/ClassiCube'
