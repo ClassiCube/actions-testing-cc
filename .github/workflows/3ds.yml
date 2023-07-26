@@ -25,4 +25,4 @@ jobs:
       - uses: ./.github/actions/notify_failure
         with:
           NOTIFY_MESSAGE: 'Failed to compile 3DS build'
-          WEBHOOK_URL: '${{ secrets.secrets.WEBHOOK_URL }}'
+          WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'

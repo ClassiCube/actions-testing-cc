@@ -26,4 +26,4 @@ jobs:
       - uses: ./.github/actions/notify_failure
         with:
           NOTIFY_MESSAGE: 'Failed to compile Haiku build'
-          WEBHOOK_URL: '${{ secrets.secrets.WEBHOOK_URL }}'
+          WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
