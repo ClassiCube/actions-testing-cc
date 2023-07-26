@@ -27,5 +27,5 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome  == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube-haiku'
-          DEST_NAME: 'latest/haiku/ClassiCube'
+          SOURCE_FILE: 'src/ClassiCube-haiku'
+          DEST_NAME: 'ClassiCube-haiku'

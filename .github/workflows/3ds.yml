@@ -27,10 +27,10 @@ jobs:
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-3ds.elf'
-          DEST_NAME: 'latest/3ds/ClassiCube.elf'
+          DEST_NAME: 'ClassiCube-3ds.elf'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-3ds.3dsx'
-          DEST_NAME: 'latest/3ds/ClassiCube.3dsx'
+          DEST_NAME: 'ClassiCube-3ds.3dsx'

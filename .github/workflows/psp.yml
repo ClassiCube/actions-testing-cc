@@ -27,4 +27,4 @@ jobs:
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-psp.elf'
-          DEST_NAME: 'latest/psp/ClassiCube'
+          DEST_NAME: 'ClassiCube-psp.elf'
