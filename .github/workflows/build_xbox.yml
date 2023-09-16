@@ -12,11 +12,15 @@ jobs:
     container:
       image: ghcr.io/xboxdev/nxdk:git-e955705a
     steps:
+      - name: Change working directory
+        id: change-directory
+        run: |
+          cd /usr/src/app
+          
       - uses: actions/checkout@v3
       - name: Compile Xbox build
         id: compile
         run: |
-          cd /usr/src/app
           make xbox
 
       - uses: ./.github/actions/notify_failure
