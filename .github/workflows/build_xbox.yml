@@ -19,14 +19,27 @@ jobs:
           eval $(/usr/src/nxdk/bin/activate -s)
           make xbox
 
+
+      # otherwise notify_failure doesn't work
+      - name: Install curl when necessary
+        if: ${{ always() && steps.compile.outcome == 'failure' }}
+        run: sudo apt-get install -y curl
+
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile Xbox build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
+          
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube.xbe'
-          DEST_NAME: 'ClassiCube.xbe'
+          DEST_NAME: 'ClassiCube-xbox.xbe'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-xbox.iso'
+          DEST_NAME: 'ClassiCube-xbox.iso'
