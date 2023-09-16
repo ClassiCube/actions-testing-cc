@@ -16,6 +16,7 @@ jobs:
       - name: Compile Xbox build
         id: compile
         run: |
+          cd /usr/src/app
           make xbox
 
       - uses: ./.github/actions/notify_failure
