@@ -44,7 +44,7 @@ static void Http_BeginRequest(struct HttpRequest* req, cc_string* url) {
 
 	Mutex_Lock(curRequestMutex);
 	{
-		http_curRequest  = *req;
+		HttpRequest_Copy(&http_curRequest, req);
 		http_curProgress = HTTP_PROGRESS_MAKING_REQUEST;
 	}
 	Mutex_Unlock(curRequestMutex);
@@ -121,6 +121,17 @@ static void Http_SetRequestHeaders(struct HttpRequest* req) {
 	Http_AddHeader(req, "Cookie", &cookies);
 }
 
+/* TODO: Rewrite to use a local variable instead */
+static cc_string* Http_GetUserAgent_UNSAFE(void) {
+	static char userAgentBuffer[STRING_SIZE];
+	static cc_string userAgent;
+
+	String_InitArray(userAgent, userAgentBuffer);
+	String_AppendConst(&userAgent, GAME_APP_NAME);
+	String_AppendConst(&userAgent, Platform_AppNameSuffix);
+	return &userAgent;
+}
+
 static void Http_SignalWorker(void) { Waitable_Signal(workerWaitable); }
 
 /* Adds a req to the list of pending requests, waking up worker thread if needed */
@@ -142,7 +153,7 @@ cc_bool Http_GetResult(int reqID, struct HttpRequest* item) {
 	Mutex_Lock(processedMutex);
 	{
 		i = RequestList_Find(&processedReqs, reqID);
-		if (i >= 0) *item = processedReqs.entries[i];
+		if (i >= 0) HttpRequest_Copy(item, &processedReqs.entries[i]);
 		if (i >= 0) RequestList_RemoveAt(&processedReqs, i);
 	}
 	Mutex_Unlock(processedMutex);
@@ -598,7 +609,6 @@ static cc_result ConnectionPool_Open(struct HttpConnection** conn, const struct 
 *#########################################################################################################################*/
 enum HTTP_RESPONSE_STATE {
 	HTTP_RESPONSE_STATE_HEADER,
-	HTTP_RESPONSE_STATE_BODY_INIT,
 	HTTP_RESPONSE_STATE_BODY_DATA,
 	HTTP_RESPONSE_STATE_CHUNK_HEADER,
 	HTTP_RESPONSE_STATE_CHUNK_DATA,
@@ -614,6 +624,7 @@ struct HttpClientState {
 	struct HttpRequest* req;
 	int chunked;
 	int chunkRead, chunkLength;
+	cc_bool autoClose;
 	cc_string header, location;
 	struct HttpUrl url;
 	char _headerBuffer[256], _locationBuffer[256];
@@ -624,6 +635,7 @@ static void HttpClientState_Reset(struct HttpClientState* state) {
 	state->chunked     = 0;
 	state->chunkRead   = 0;
 	state->chunkLength = 0;
+	state->autoClose   = false;
 	String_InitArray(state->header,   state->_headerBuffer);
 	String_InitArray(state->location, state->_locationBuffer);
 }
@@ -634,8 +646,7 @@ static void HttpClientState_Init(struct HttpClientState* state) {
 
 
 static void HttpClient_Serialise(struct HttpClientState* state) {
-	static const cc_string userAgent = String_FromConst(GAME_APP_NAME);
-	static const char* verbs[3] = { "GET", "HEAD", "POST" };
+	static const char* verbs[] = { "GET", "HEAD", "POST" };
 
 	struct HttpRequest* req = state->req;
 	cc_string* buffer = (cc_string*)req->meta;
@@ -645,7 +656,7 @@ static void HttpClient_Serialise(struct HttpClientState* state) {
 					verbs[req->requestType], &state->url.resource);
 
 	Http_AddHeader(req, "Host",       &state->url.address);
-	Http_AddHeader(req, "User-Agent", &userAgent);
+	Http_AddHeader(req, "User-Agent", Http_GetUserAgent_UNSAFE());
 	if (req->data) String_Format1(buffer, "Content-Length: %i\r\n", &req->size);
 
 	Http_SetRequestHeaders(req);
@@ -674,7 +685,11 @@ static cc_result HttpClient_SendRequest(struct HttpClientState* state) {
 
 
 static void HttpClient_ParseHeader(struct HttpClientState* state, const cc_string* line) {
+	static const cc_string HTTP_10_VERSION = String_FromConst("HTTP/1.0");
 	cc_string name, value;
+	/* HTTP 1.0 defaults to auto closing connection */
+	if (String_CaselessStarts(line, &HTTP_10_VERSION)) state->autoClose = true;
+
 	/* name: value */
 	if (!String_UNSAFE_Separate(line, ':', &name, &value)) return;
 
@@ -682,6 +697,9 @@ static void HttpClient_ParseHeader(struct HttpClientState* state, const cc_strin
 		state->chunked = String_CaselessEqualsConst(&value, "chunked");
 	} else if (String_CaselessEqualsConst(&name, "Location")) {
 		String_Copy(&state->location, &value);
+	} else if (String_CaselessEqualsConst(&name, "Connection")) {
+		if (String_CaselessEqualsConst(&value, "keep-alive")) state->autoClose = false;
+		if (String_CaselessEqualsConst(&value, "close"))      state->autoClose = true;
 	}
 }
 
@@ -695,6 +713,22 @@ static cc_bool HttpClient_HasBody(struct HttpRequest* req) {
 	if (req->statusCode == 204 || req->statusCode == 304) return false;
 
 	return true;
+}
+
+static int HttpClient_BeginBody(struct HttpRequest* req, struct HttpClientState* state) {
+	if (!HttpClient_HasBody(req))
+		return HTTP_RESPONSE_STATE_DONE;
+	
+	if (state->chunked) {
+		Http_BufferInit(req);
+		return HTTP_RESPONSE_STATE_CHUNK_HEADER;
+	}
+	if (req->contentLength) {
+		Http_BufferInit(req);
+		return HTTP_RESPONSE_STATE_BODY_DATA;
+	}
+	/* Zero length response */
+	return HTTP_RESPONSE_STATE_DONE;
 }
 
 /* RFC 7230, section 4.1 - Chunked Transfer Coding */
@@ -730,29 +764,13 @@ static cc_result HttpClient_Process(struct HttpClientState* state, char* buffer,
 
 				/* Zero length header = end of message headers */
 				if (state->header.length == 0) {
-					state->state = HTTP_RESPONSE_STATE_BODY_INIT;
+					state->state = HttpClient_BeginBody(req, state);
 					break;
 				}
 
 				Http_ParseHeader(state->req, &state->header);
 				HttpClient_ParseHeader(state, &state->header);
 				state->header.length = 0;
-			}
-		}
-		break;
-
-		case HTTP_RESPONSE_STATE_BODY_INIT:
-		{
-			if (!HttpClient_HasBody(req)) {
-				state->state = HTTP_RESPONSE_STATE_DONE;
-			} else if (state->chunked) {
-				Http_BufferInit(req);
-				state->state = HTTP_RESPONSE_STATE_CHUNK_HEADER;
-			} else if (req->contentLength) {
-				Http_BufferInit(req);
-				state->state = HTTP_RESPONSE_STATE_BODY_DATA;
-			} else {
-				return HTTP_ERR_INVALID_BODY;
 			}
 		}
 		break;
@@ -915,6 +933,7 @@ static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* urlStr) {
 
 		res = HttpClient_ParseResponse(&state);
 		http_curProgress = 100;
+		if (state.autoClose) HttpConnection_Close(state.conn);
 
 		if (res || !HttpClient_IsRedirect(req)) break;
 		if (redirects >= 20) return HTTP_ERR_REDIRECTS;
@@ -1306,7 +1325,6 @@ static cc_result Http_SetData(JNIEnv* env, struct HttpRequest* req) {
 }
 
 static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* url) {
-	static const cc_string userAgent = String_FromConst(GAME_APP_NAME);
 	JNIEnv* env;
 	jint res;
 
@@ -1315,7 +1333,7 @@ static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* url) {
 	java_req = req;
 
 	Http_SetRequestHeaders(req);
-	Http_AddHeader(req, "User-Agent", &userAgent);
+	Http_AddHeader(req, "User-Agent", Http_GetUserAgent_UNSAFE());
 	if (req->data && (res = Http_SetData(env, req))) return res;
 
 	req->_capacity   = 0;
@@ -1381,7 +1399,6 @@ static cc_result ParseResponseHeaders(struct HttpRequest* req, CFReadStreamRef s
 }
 
 static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* url) {
-    static const cc_string userAgent = String_FromConst(GAME_APP_NAME);
     static CFStringRef verbs[] = { CFSTR("GET"), CFSTR("HEAD"), CFSTR("POST") };
     cc_bool gotHeaders = false;
     char tmp[NATIVE_STR_LEN];
@@ -1400,7 +1417,7 @@ static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* url) {
     request = CFHTTPMessageCreateRequest(NULL, verbs[req->requestType], urlRef, kCFHTTPVersion1_1);
     req->meta = request;
     Http_SetRequestHeaders(req);
-    Http_AddHeader(req, "User-Agent", &userAgent);
+    Http_AddHeader(req, "User-Agent", Http_GetUserAgent_UNSAFE());
     CFRelease(urlRef);
     
     if (req->data && req->size) {
@@ -1467,7 +1484,7 @@ static void WorkerLoop(void) {
 		Mutex_Lock(pendingMutex);
 		{
 			if (pendingReqs.count) {
-				request    = pendingReqs.entries[0];
+				HttpRequest_Copy(&request, &pendingReqs.entries[0]);
 				hasRequest = true;
 				RequestList_RemoveAt(&pendingReqs, 0);
 			}

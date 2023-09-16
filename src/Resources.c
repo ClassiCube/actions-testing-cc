@@ -434,14 +434,6 @@ static cc_result CCTextures_ExtractZip(struct HttpRequest* req) {
 }
 #endif
 
-static void CCTextures_Check(const struct SoundAsset* sound) {
-	struct HttpRequest item;
-	if (!Fetcher_Get(sound->reqID, &item)) return;
-
-	SoundPatcher_Save(sound->name, &item);
-	HttpRequest_Free(&item);
-}
-
 static void CCTextures_CheckStatus(void) {
 	struct HttpRequest item;
 	cc_result res;
@@ -1058,7 +1050,9 @@ static const struct AssetSet* const asset_sets[] = {
 	&ccTexsAssetSet,
 	&mccTexsAssetSet,
 	&mccMusicAssetSet,
+#ifndef CC_BUILD_LOWMEM
 	&mccSoundAssetSet
+#endif /* TODO: Vorbis decoding */
 };
 
 void Resources_CheckExistence(void) {
@@ -1117,6 +1111,14 @@ static void Fetcher_Finish(void) {
 	}
 }
 
+static void Fetcher_Fail(struct HttpRequest* item) {
+	Http_ClearPending();
+
+	/* Only show error for first failed download */
+	if (!Fetcher_Failed) Fetcher_ErrorCallback(item);
+	Fetcher_Failed = true;
+}
+
 CC_NOINLINE static cc_bool Fetcher_Get(int reqID, struct HttpRequest* item) {
 	if (!Http_GetResult(reqID, item)) return false;
 
@@ -1125,9 +1127,7 @@ CC_NOINLINE static cc_bool Fetcher_Get(int reqID, struct HttpRequest* item) {
 		return true;
 	}
 
-	/* Only show error for first failed download */
-	if (!Fetcher_Failed) Fetcher_ErrorCallback(item);
-	Fetcher_Failed = true;
+	Fetcher_Fail(item);
 	HttpRequest_Free(item);
 	
 	Fetcher_Finish();

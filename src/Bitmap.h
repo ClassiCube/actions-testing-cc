@@ -2,13 +2,13 @@
 #define CC_BITMAP_H
 #include "Core.h"
 /* Represents a 2D array of pixels.
-   Copyright 2014-2022 ClassiCube | Licensed under BSD-3
+   Copyright 2014-2023 ClassiCube | Licensed under BSD-3
 */
 struct Stream;
 
 /* Represents a packed 32 bit RGBA colour, suitable for native graphics API texture pixels. */
 typedef cc_uint32 BitmapCol;
-#if defined CC_BUILD_WEB || defined CC_BUILD_ANDROID || defined CC_BUILD_PSP
+#if defined CC_BUILD_WEB || defined CC_BUILD_ANDROID || defined CC_BUILD_PSP || defined CC_BUILD_PSVITA
 #define BITMAPCOLOR_R_SHIFT  0
 #define BITMAPCOLOR_G_SHIFT  8
 #define BITMAPCOLOR_B_SHIFT 16

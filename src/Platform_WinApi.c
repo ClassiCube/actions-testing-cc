@@ -37,6 +37,8 @@ const cc_result ReturnCode_FileNotFound     = ERROR_FILE_NOT_FOUND;
 const cc_result ReturnCode_SocketInProgess  = WSAEINPROGRESS;
 const cc_result ReturnCode_SocketWouldBlock = WSAEWOULDBLOCK;
 const cc_result ReturnCode_DirectoryExists  = ERROR_ALREADY_EXISTS;
+const char* Platform_AppNameSuffix = "";
+cc_bool Platform_SingleProcess;
 
 /*########################################################################################################################*
 *---------------------------------------------------------Memory----------------------------------------------------------*
@@ -471,7 +473,7 @@ static int ParseHost(void* dst, char* host, int port) {
 	if (res->h_addrtype != AF_INET) return ERR_INVALID_ARGUMENT;
 
 	/* Must have at least one IPv4 address */
-	if (!res->h_addr_list[0]) return false;
+	if (!res->h_addr_list[0]) return ERR_INVALID_ARGUMENT;
 
 	addr4->sin_family = AF_INET;
 	addr4->sin_port   = _htons(port);
@@ -661,6 +663,7 @@ cc_result Process_StartOpen(const cc_string* args) {
 *#########################################################################################################################*/
 #define UPDATE_TMP TEXT("CC_prev.exe")
 #define UPDATE_SRC TEXT(UPDATE_FILE)
+cc_bool Updater_Supported = true;
 
 const struct UpdaterInfo Updater_Info = {
 	"&eDirect3D 9 is recommended", 2,
@@ -745,11 +748,15 @@ cc_result Updater_SetNewBuildTime(cc_uint64 timestamp) {
 *#########################################################################################################################*/
 const cc_string DynamicLib_Ext = String_FromConst(".dll");
 static cc_result dynamicErr;
+static cc_bool loadingPlugin;
 
 void* DynamicLib_Load2(const cc_string* path) {
+	static cc_string plugins_dir = String_FromConst("plugins/");
 	cc_winstring str;
 	void* lib;
+
 	Platform_EncodeString(&str, path);
+	loadingPlugin = String_CaselessStarts(path, &plugins_dir);
 
 	if ((lib = LoadLibraryW(str.uni))) return lib;
 	dynamicErr = GetLastError();
@@ -773,6 +780,12 @@ cc_bool DynamicLib_DescribeError(cc_string* dst) {
 
 	Platform_DescribeError(res, dst);
 	String_Format1(dst, " (error %i)", &res);
+
+	/* Plugin may have been compiled to load symbols from ClassiCube.exe, */
+	/*  but the user might have renamed it to something else */
+	if (res == ERROR_MOD_NOT_FOUND && loadingPlugin) {
+		String_AppendConst(dst, "\n    Make sure the ClassiCube executable is named ClassiCube.exe");
+	}
 	return true;
 }
 

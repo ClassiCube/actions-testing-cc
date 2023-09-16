@@ -2,7 +2,7 @@ C_SOURCES:=$(wildcard src/*.c)
 C_OBJECTS:=$(patsubst %.c, %.o, $(C_SOURCES))
 OBJECTS:=$(C_OBJECTS)
 ENAME=ClassiCube
-DEL=rm
+DEL=rm -f
 CFLAGS=-g -pipe -fno-math-errno
 LDFLAGS=-g -rdynamic
 
@@ -26,7 +26,7 @@ ifeq ($(PLAT),web)
 CC=emcc
 OEXT=.html
 CFLAGS=-g
-LDFLAGS=-s WASM=1 -s NO_EXIT_RUNTIME=1 --preload-file texpacks/default.zip@texpacks/default.zip
+LDFLAGS=-s WASM=1 -s NO_EXIT_RUNTIME=1 -s ALLOW_MEMORY_GROWTH=1
 endif
 
 ifeq ($(PLAT),mingw)
@@ -106,13 +106,6 @@ CC=gcc
 LIBS=-lGL -lX11 -lXi -lm -lpthread -ldl
 endif
 
-ifeq ($(PLAT),psp)
-CC=psp-gcc
-CFLAGS=-g -pipe -fno-math-errno -I ${PSPDEV}/psp/sdk/include
-LIBS=-lm -lpspgum -lpspgu -lpspge -lpspdisplay -lpspctrl
-LDFLAGS=-g -L ${PSPDEV}/psp/sdk/lib
-endif
-
 ifeq ($(OS),Windows_NT)
 DEL=del
 endif
@@ -147,14 +140,27 @@ serenityos:
 	$(MAKE) $(ENAME) PLAT=serenityos
 irix:
 	$(MAKE) $(ENAME) PLAT=irix
+	
+# consoles builds require special handling, so are moved to
+#  separate makefiles to avoid having one giant messy makefile
 psp:
-	$(MAKE) ClassiCube-psp.elf PLAT=psp
+	$(MAKE) -f misc/psp/Makefile PLAT=psp
+vita:
+	$(MAKE) -f misc/vita/Makefile PLAT=vita
+ps3:
+	$(MAKE) -f src/Makefile_PS3 PLAT=ps3
 3ds:
-	$(MAKE) -f src/Makefile_3DS PLAT=3ds
+	$(MAKE) -f misc/3ds/Makefile PLAT=3ds
 wii:
-	$(MAKE) -f src/Makefile_wii PLAT=wii
+	$(MAKE) -f misc/wii/Makefile PLAT=wii
 gamecube:
-	$(MAKE) -f src/Makefile_gamecube PLAT=gamecube
+	$(MAKE) -f misc/gc/Makefile PLAT=gamecube
+dreamcast:
+	$(MAKE) -f src/Makefile_dreamcast PLAT=dreamcast
+xbox:
+	$(MAKE) -f src/Makefile_xbox PLAT=xbox
+xbox360:
+	$(MAKE) -f src/Makefile_xbox360 PLAT=xbox360
 	
 clean:
 	$(DEL) $(OBJECTS)
@@ -170,8 +176,3 @@ src/interop_cocoa.o: src/interop_cocoa.m
 	
 src/interop_BeOS.o: src/interop_BeOS.cpp
 	$(CC) $(CFLAGS) -c $< -o $@
-	
-# PSP requires fixups
-ClassiCube-psp.elf : $(ENAME)
-	cp $(ENAME) ClassiCube-psp.elf
-	psp-fixup-imports ClassiCube-psp.elf

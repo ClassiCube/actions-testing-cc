@@ -51,6 +51,7 @@ void Gfx_Create(void) {
 	Gfx.MaxTexWidth  = 512;
 	Gfx.MaxTexHeight = 512;
 	Gfx.Created      = true;
+	gfx_vsync        = true;
 	
 	InitGX();
 	Gfx_RestoreState();
@@ -238,9 +239,7 @@ cc_result Gfx_TakeScreenshot(struct Stream* output) {
 }
 
 void Gfx_GetApiInfo(cc_string* info) {
-	int pointerSize = sizeof(void*) * 8;
-
-	String_Format1(info, "-- Using GC/WII (%i bit) --\n", &pointerSize);
+	String_Format1(info, "-- Using GC/WII --", NULL);
 	String_Format2(info, "Max texture size: (%i, %i)\n", &Gfx.MaxTexWidth, &Gfx.MaxTexHeight);
 }
 
@@ -262,7 +261,8 @@ void Gfx_EndFrame(void) {
 	
 	VIDEO_SetNextFramebuffer(xfbs[curFB]);
 	VIDEO_Flush();
-	VIDEO_WaitVSync();
+	
+	if (gfx_vsync) VIDEO_WaitVSync();
 	if (gfx_minFrameMs) LimitFPS();
 }
 

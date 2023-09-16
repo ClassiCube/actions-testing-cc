@@ -61,8 +61,7 @@ static void guInit(void) {
 	sceGuScissor(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 	sceGuDisable(GU_SCISSOR_TEST);
 	
-	
-    //sceGuDisable(GU_CLIP_PLANES);
+	sceGuEnable(GU_CLIP_PLANES); // TODO: swap near/far instead of this?
 	sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
 	
 	sceGuFinish();
@@ -218,6 +217,7 @@ void Gfx_CalcPerspectiveMatrix(struct Matrix* matrix, float fov, float aspect, f
 	matrix->row3.W = -1.0f;
 	matrix->row4.Z = -(2.0f * zFar * zNear) / (zFar - zNear);
 	matrix->row4.W =  0.0f;
+	// TODO: should direct3d9 one be used insted with clip range from 0,1 ?
 }
 
 
@@ -229,9 +229,7 @@ cc_result Gfx_TakeScreenshot(struct Stream* output) {
 }
 
 void Gfx_GetApiInfo(cc_string* info) {
-	int pointerSize = sizeof(void*) * 8;
-
-	String_Format1(info, "-- Using PSP (%i bit) --\n", &pointerSize);
+	String_Format1(info, "-- Using PSP--\n", NULL);
 	String_Format2(info, "Max texture size: (%i, %i)\n", &Gfx.MaxTexWidth, &Gfx.MaxTexHeight);
 }
 
@@ -320,6 +318,7 @@ void Gfx_UnlockDynamicVb(GfxResourceID vb) {
 }
 
 void Gfx_SetDynamicVbData(GfxResourceID vb, void* vertices, int vCount) {
+	gfx_vertices = vb;
 	Mem_Copy(vb, vertices, vCount * gfx_stride);
 	sceKernelDcacheWritebackInvalidateRange(vertices, vCount * gfx_stride);
 }

@@ -76,7 +76,7 @@ static struct HUDScreen {
 	int lastFov;
 	struct HotbarWidget hotbar;
 } HUDScreen_Instance;
-#define HUD_MAX_VERTICES (TEXTWIDGET_MAX * 2 + 4)
+#define HUD_MAX_VERTICES (4 + TEXTWIDGET_MAX * 2 + HOTBAR_MAX_VERTICES)
 
 static void HUDScreen_RemakeLine1(struct HUDScreen* s) {
 	cc_string status; char statusBuffer[STRING_SIZE * 2];
@@ -277,6 +277,10 @@ static void HUDScreen_HacksChanged(void* obj) {
 	((struct HUDScreen*)obj)->hacksChanged = true;
 }
 
+static void HUDScreen_NeedRedrawing(void* obj) {
+	((struct HUDScreen*)obj)->dirty = true;
+}
+
 static void HUDScreen_Init(void* screen) {
 	struct HUDScreen* s = (struct HUDScreen*)screen;
 	s->maxVertices      = HUD_MAX_VERTICES;
@@ -284,7 +288,16 @@ static void HUDScreen_Init(void* screen) {
 	HotbarWidget_Create(&s->hotbar);
 	TextWidget_Init(&s->line1);
 	TextWidget_Init(&s->line2);
-	Event_Register_(&UserEvents.HacksStateChanged, screen, HUDScreen_HacksChanged);
+
+	Event_Register_(&UserEvents.HacksStateChanged, s, HUDScreen_HacksChanged);
+	Event_Register_(&TextureEvents.AtlasChanged,   s, HUDScreen_NeedRedrawing);
+	Event_Register_(&BlockEvents.BlockDefChanged,  s, HUDScreen_NeedRedrawing);
+}
+
+static void HUDScreen_Free(void* screen) {
+	Event_Unregister_(&UserEvents.HacksStateChanged, screen, HUDScreen_HacksChanged);
+	Event_Unregister_(&TextureEvents.AtlasChanged,   screen, HUDScreen_NeedRedrawing);
+	Event_Unregister_(&BlockEvents.BlockDefChanged,  screen, HUDScreen_NeedRedrawing);
 }
 
 static void HUDScreen_UpdateFPS(struct HUDScreen* s, double delta) {
@@ -300,7 +313,8 @@ static void HUDScreen_UpdateFPS(struct HUDScreen* s, double delta) {
 
 static void HUDScreen_Update(void* screen, double delta) {
 	struct HUDScreen* s = (struct HUDScreen*)screen;
-	HUDScreen_UpdateFPS(s, delta);
+	HUDScreen_UpdateFPS(s,          delta);
+	HotbarWidget_Update(&s->hotbar, delta);
 	if (Game_ClassicMode) return;
 
 	if (IsOnlyChatActive() && Gui.ShowFPS) {
@@ -332,8 +346,9 @@ static void HUDScreen_BuildMesh(void* screen) {
 	ptr  = &data;
 
 	HUDScreen_BuildCrosshairsMesh(ptr);
-	Widget_BuildMesh(&s->line1, ptr);
-	Widget_BuildMesh(&s->line2, ptr);
+	Widget_BuildMesh(&s->line1,  ptr);
+	Widget_BuildMesh(&s->line2,  ptr);
+	Widget_BuildMesh(&s->hotbar, ptr);
 	Gfx_UnlockDynamicVb(s->vb);
 }
 
@@ -343,8 +358,6 @@ static void HUDScreen_Render(void* screen, double delta) {
 
 	Gfx_SetVertexFormat(VERTEX_FORMAT_TEXTURED);
 	Gfx_BindDynamicVb(s->vb);
-
-	/* TODO: If Game_ShowFps is off and not classic mode, we should just return here */
 	if (Gui.ShowFPS) Widget_Render2(&s->line1, 4);
 
 	if (Game_ClassicMode) {
@@ -355,18 +368,15 @@ static void HUDScreen_Render(void* screen, double delta) {
 		/* TODO swap these two lines back */
 	}
 
-	if (!Gui_GetBlocksWorld()) Elem_Render(&s->hotbar, delta);
+	if (Gui_GetBlocksWorld()) return;
+	Gfx_BindDynamicVb(s->vb);
+	Widget_Render2(&s->hotbar, 12);
 
-	if (!Gui.IconsTex) return;
-	if (!tablist_active && !Gui_GetBlocksWorld()) {
+	if (Gui.IconsTex && !tablist_active) {
 		Gfx_BindTexture(Gui.IconsTex);
-		Gfx_BindDynamicVb(s->vb);
+		Gfx_BindDynamicVb(s->vb); /* Have to rebind for mobile right now... */
 		Gfx_DrawVb_IndexedTris(4);
 	}
-}
-
-static void HUDScreen_Free(void* screen) {
-	Event_Unregister_(&UserEvents.HacksStateChanged, screen, HUDScreen_HacksChanged);
 }
 
 static const struct ScreenVTABLE HUDScreen_VTABLE = {
@@ -397,7 +407,7 @@ static struct TabListOverlay {
 	Screen_Body
 	int x, y, width, height;
 	cc_bool classic, staysOpen;
-	int namesCount, elementOffset;
+	int usedCount, elementOffset;
 	struct TextWidget title;
 	struct FontDesc font;
 	TabListEntryCompare compare;
@@ -423,10 +433,11 @@ static void TabListOverlay_DrawText(struct Texture* tex, struct TabListOverlay* 
 
 static int TabListOverlay_GetColumnWidth(struct TabListOverlay* s, int column) {
 	int i   = column * LIST_NAMES_PER_COLUMN;
-	int end = min(s->namesCount, i + LIST_NAMES_PER_COLUMN);
+	int end = min(s->usedCount, i + LIST_NAMES_PER_COLUMN);
 	int maxWidth = 0;
 
-	for (; i < end; i++) {
+	for (; i < end; i++) 
+	{
 		maxWidth = max(maxWidth, s->textures[i].Width);
 	}
 	return maxWidth + LIST_COLUMN_PADDING + s->elementOffset;
@@ -434,10 +445,11 @@ static int TabListOverlay_GetColumnWidth(struct TabListOverlay* s, int column) {
 
 static int TabListOverlay_GetColumnHeight(struct TabListOverlay* s, int column) {
 	int i   = column * LIST_NAMES_PER_COLUMN;
-	int end = min(s->namesCount, i + LIST_NAMES_PER_COLUMN);
+	int end = min(s->usedCount, i + LIST_NAMES_PER_COLUMN);
 	int height = 0;
 
-	for (; i < end; i++) {
+	for (; i < end; i++) 
+	{
 		height += s->textures[i].Height + 1;
 	}
 	return height;
@@ -446,9 +458,10 @@ static int TabListOverlay_GetColumnHeight(struct TabListOverlay* s, int column) 
 static void TabListOverlay_SetColumnPos(struct TabListOverlay* s, int column, int x, int y) {
 	struct Texture tex;
 	int i   = column * LIST_NAMES_PER_COLUMN;
-	int end = min(s->namesCount, i + LIST_NAMES_PER_COLUMN);
+	int end = min(s->usedCount, i + LIST_NAMES_PER_COLUMN);
 
-	for (; i < end; i++) {
+	for (; i < end; i++) 
+	{
 		tex = s->textures[i];
 		tex.X = x; tex.Y = y - 10;
 
@@ -465,9 +478,10 @@ static void TabListOverlay_Layout(void* screen) {
 	struct TabListOverlay* s = (struct TabListOverlay*)screen;
 	int minWidth, minHeight, paddingX, paddingY;
 	int i, x, y, width = 0, height = 0;
-	int columns = Math_CeilDiv(s->namesCount, LIST_NAMES_PER_COLUMN);
+	int columns = Math_CeilDiv(s->usedCount, LIST_NAMES_PER_COLUMN);
 
-	for (i = 0; i < columns; i++) {
+	for (i = 0; i < columns; i++) 
+	{
 		width += TabListOverlay_GetColumnWidth(s,  i);
 		y      = TabListOverlay_GetColumnHeight(s, i);
 		height = max(height, y);
@@ -488,7 +502,8 @@ static void TabListOverlay_Layout(void* screen) {
 	x = s->x + paddingX;
 	y = s->y + paddingY;
 
-	for (i = 0; i < columns; i++) {
+	for (i = 0; i < columns; i++) 
+	{
 		TabListOverlay_SetColumnPos(s, i, x, y);
 		x += TabListOverlay_GetColumnWidth(s, i);
 	}
@@ -506,7 +521,7 @@ static void TabListOverlay_Layout(void* screen) {
 static void TabListOverlay_AddName(struct TabListOverlay* s, EntityID id, int index) {
 	cc_string name;
 	/* insert at end of list */
-	if (index == -1) { index = s->namesCount; s->namesCount++; }
+	if (index == -1) { index = s->usedCount; s->usedCount++; }
 
 	name = TabList_UNSAFE_GetList(id);
 	s->ids[index] = id;
@@ -516,14 +531,15 @@ static void TabListOverlay_AddName(struct TabListOverlay* s, EntityID id, int in
 static void TabListOverlay_DeleteAt(struct TabListOverlay* s, int i) {
 	Gfx_DeleteTexture(&s->textures[i].ID);
 
-	for (; i < s->namesCount - 1; i++) {
+	for (; i < s->usedCount - 1; i++)
+	{
 		s->ids[i]      = s->ids[i + 1];
 		s->textures[i] = s->textures[i + 1];
 	}
 
-	s->namesCount--;
-	s->ids[s->namesCount]         = 0;
-	s->textures[s->namesCount].ID = 0;
+	s->usedCount--;
+	s->ids[s->usedCount]         = 0;
+	s->textures[s->usedCount].ID = 0;
 }
 
 static void TabListOverlay_AddGroup(struct TabListOverlay* s, int id, int* index) {
@@ -531,7 +547,8 @@ static void TabListOverlay_AddGroup(struct TabListOverlay* s, int id, int* index
 	int i;
 	group = TabList_UNSAFE_GetGroup(id);
 
-	for (i = Array_Elems(s->ids) - 1; i > (*index); i--) {
+	for (i = Array_Elems(s->ids) - 1; i > (*index); i--) 
+	{
 		s->ids[i]      = s->ids[i - 1];
 		s->textures[i] = s->textures[i - 1];
 	}
@@ -541,7 +558,7 @@ static void TabListOverlay_AddGroup(struct TabListOverlay* s, int id, int* index
 	TabListOverlay_DrawText(&s->textures[*index], s, &group);
 
 	(*index)++;
-	s->namesCount++;
+	s->usedCount++;
 }
 
 static int TabListOverlay_GetGroupCount(struct TabListOverlay* s, int id, int i) {
@@ -549,7 +566,8 @@ static int TabListOverlay_GetGroupCount(struct TabListOverlay* s, int id, int i)
 	int count;
 	group = TabList_UNSAFE_GetGroup(id);
 
-	for (count = 0; i < s->namesCount; i++, count++) {
+	for (count = 0; i < s->usedCount; i++, count++)
+	{
 		curGroup = TabList_UNSAFE_GetGroup(s->ids[i]);
 		if (!String_CaselessEquals(&group, &curGroup)) break;
 	}
@@ -607,26 +625,28 @@ static void TabListOverlay_QuickSort(int left, int right) {
 
 static void TabListOverlay_SortEntries(struct TabListOverlay* s) {
 	int i, id, count;
-	if (!s->namesCount) return;
+	if (!s->usedCount) return;
 
 	if (s->classic) {
 		TabListOverlay_Instance.compare = TabListOverlay_PlayerCompare;
-		TabListOverlay_QuickSort(0, s->namesCount - 1);
+		TabListOverlay_QuickSort(0, s->usedCount - 1);
 		return;
 	}
 
 	/* Sort the list by group */
 	/* Loop backwards, since DeleteAt() reduces NamesCount */
-	for (i = s->namesCount - 1; i >= 0; i--) {
+	for (i = s->usedCount - 1; i >= 0; i--)
+	{
 		if (s->ids[i] != GROUP_NAME_ID) continue;
 		TabListOverlay_DeleteAt(s, i);
 	}
 	TabListOverlay_Instance.compare = TabListOverlay_GroupCompare;
-	TabListOverlay_QuickSort(0, s->namesCount - 1);
+	TabListOverlay_QuickSort(0, s->usedCount - 1);
 
 	/* Sort the entries in each group */
 	TabListOverlay_Instance.compare = TabListOverlay_PlayerCompare;
-	for (i = 0; i < s->namesCount; ) {
+	for (i = 0; i < s->usedCount; )
+	{
 		id = s->ids[i];
 		TabListOverlay_AddGroup(s, id, &i);
 
@@ -639,6 +659,7 @@ static void TabListOverlay_SortEntries(struct TabListOverlay* s) {
 static void TabListOverlay_SortAndLayout(struct TabListOverlay* s) {
 	TabListOverlay_SortEntries(s);
 	TabListOverlay_Layout(s);
+	s->dirty = true;
 }
 
 static void TabListOverlay_Add(void* obj, int id) {
@@ -650,8 +671,8 @@ static void TabListOverlay_Add(void* obj, int id) {
 static void TabListOverlay_Update(void* obj, int id) {
 	struct TabListOverlay* s = (struct TabListOverlay*)obj;
 	int i;
-
-	for (i = 0; i < s->namesCount; i++) {
+	for (i = 0; i < s->usedCount; i++)
+	{
 		if (s->ids[i] != id) continue;
 		Gfx_DeleteTexture(&s->textures[i].ID);
 
@@ -664,7 +685,8 @@ static void TabListOverlay_Update(void* obj, int id) {
 static void TabListOverlay_Remove(void* obj, int id) {
 	struct TabListOverlay* s = (struct TabListOverlay*)obj;
 	int i;
-	for (i = 0; i < s->namesCount; i++) {
+	for (i = 0; i < s->usedCount; i++)
+	{
 		if (s->ids[i] != id) continue;
 
 		TabListOverlay_DeleteAt(s, i);
@@ -683,7 +705,8 @@ static int TabListOverlay_PointerDown(void* screen, int id, int x, int y) {
 	if (!((struct Screen*)Gui_Chat)->grabsInput) return false;
 	String_InitArray(text, textBuffer);
 
-	for (i = 0; i < s->namesCount; i++) {
+	for (i = 0; i < s->usedCount; i++)
+	{
 		if (!s->textures[i].ID || s->ids[i] == GROUP_NAME_ID) continue;
 		tex = s->textures[i];
 		if (!Gui_Contains(tex.X, tex.Y, tex.Width, tex.Height, x, y)) continue;
@@ -698,19 +721,21 @@ static int TabListOverlay_PointerDown(void* screen, int id, int x, int y) {
 
 static void TabListOverlay_KeyUp(void* screen, int key) {
 	struct TabListOverlay* s = (struct TabListOverlay*)screen;
-	if (key != KeyBinds[KEYBIND_TABLIST] || s->staysOpen) return;
+	if (!KeyBind_Claims(KEYBIND_TABLIST, key) || s->staysOpen) return;
 	Gui_Remove((struct Screen*)s);
 }
 
 static void TabListOverlay_ContextLost(void* screen) {
 	struct TabListOverlay* s = (struct TabListOverlay*)screen;
 	int i;
-	for (i = 0; i < s->namesCount; i++) {
+	for (i = 0; i < s->usedCount; i++)
+	{
 		Gfx_DeleteTexture(&s->textures[i].ID);
 	}
 
 	Elem_Free(&s->title);
 	Font_Free(&s->font);
+	Screen_ContextLost(screen);
 }
 
 static void TabListOverlay_ContextRecreated(void* screen) {
@@ -719,44 +744,65 @@ static void TabListOverlay_ContextRecreated(void* screen) {
 
 	size = Drawer2D.BitmappedText ? 16 : 11;
 	Font_Make(&s->font, size, FONT_FLAGS_PADDING);
-	s->namesCount = 0;
+	s->usedCount = 0;
 
 	TextWidget_SetConst(&s->title, "Connected players:", &s->font);
 	Font_SetPadding(&s->font, 1);
+	Screen_UpdateVb(screen);
 
 	/* TODO: Just recreate instead of this? maybe */
-	for (id = 0; id < TABLIST_MAX_NAMES; id++) {
+	for (id = 0; id < TABLIST_MAX_NAMES; id++) 
+	{
 		if (!TabList.NameOffsets[id]) continue;
 		TabListOverlay_AddName(s, (EntityID)id, -1);
 	}
 	TabListOverlay_SortAndLayout(s); /* TODO: Not do layout here too */
 }
 
-static void TabListOverlay_BuildMesh(void* screen) { }
+static void TabListOverlay_BuildMesh(void* screen) {
+	struct TabListOverlay* s = (struct TabListOverlay*)screen;
+	struct Screen*   grabbed = Gui_GetInputGrab();
+	struct VertexTextured* v;
+	struct Texture tex;
+	int i;
+	
+	v = (struct VertexTextured*)Gfx_LockDynamicVb(s->vb,
+										VERTEX_FORMAT_TEXTURED, TEXTWIDGET_MAX + s->usedCount * 4);
+	Widget_BuildMesh(&s->title, &v);
+
+	for (i = 0; i < s->usedCount; i++)
+	{
+		if (!s->textures[i].ID) continue;
+		tex = s->textures[i];
+
+		if (grabbed && s->ids[i] != GROUP_NAME_ID) {
+			if (Gui_ContainsPointers(tex.X, tex.Y, tex.Width, tex.Height)) tex.X += 4;
+		}
+		Gfx_Make2DQuad(&tex, PACKEDCOL_WHITE, &v);
+	}
+	Gfx_UnlockDynamicVb(s->vb);
+}
 
 static void TabListOverlay_Render(void* screen, double delta) {
 	struct TabListOverlay* s = (struct TabListOverlay*)screen;
-	struct TextWidget* title = &s->title;
-	struct Screen* grabbed;
-	struct Texture tex;
-	int i;
+	int i, offset = 0;
 	PackedCol topCol    = PackedCol_Make( 0,  0,  0, 180);
 	PackedCol bottomCol = PackedCol_Make(50, 50, 50, 205);
 
 	if (Game_HideGui || !IsOnlyChatActive()) return;
 	Gfx_Draw2DGradient(s->x, s->y, s->width, s->height, topCol, bottomCol);
 
-	Elem_Render(title, delta);
-	grabbed = Gui.InputGrab;
+	Gfx_SetVertexFormat(VERTEX_FORMAT_TEXTURED);
+	Gfx_BindDynamicVb(s->vb);
+	offset = Widget_Render2(&s->title, offset);
 
-	for (i = 0; i < s->namesCount; i++) {
+	for (i = 0; i < s->usedCount; i++)
+	{
 		if (!s->textures[i].ID) continue;
-		tex = s->textures[i];
-		
-		if (grabbed && s->ids[i] != GROUP_NAME_ID) {
-			if (Gui_ContainsPointers(tex.X, tex.Y, tex.Width, tex.Height)) tex.X += 4;
-		}
-		Texture_Render(&tex);
+		Gfx_BindTexture(s->textures[i].ID);
+
+		Gfx_DrawVb_IndexedTris_Range(4, offset);
+		offset += 4;
 	}
 }
 
@@ -773,6 +819,7 @@ static void TabListOverlay_Init(void* screen) {
 	tablist_active   = true;
 	s->classic       = Gui.ClassicTabList || !Server.SupportsExtPlayerList;
 	s->elementOffset = s->classic ? 0 : 10;
+	s->maxVertices   = TABLIST_MAX_VERTICES;
 	TextWidget_Init(&s->title);
 
 	Event_Register_(&TabListEvents.Added,   s, TabListOverlay_Add);
@@ -1186,22 +1233,20 @@ static int ChatScreen_KeyPress(void* screen, char keyChar) {
 }
 
 static int ChatScreen_TextChanged(void* screen, const cc_string* str) {
-#ifdef CC_BUILD_TOUCH
 	struct ChatScreen* s = (struct ChatScreen*)screen;
 	if (!s->grabsInput) return false;
 
 	InputWidget_SetText(&s->input.base, str);
-#endif
 	return true;
 }
 
 static int ChatScreen_KeyDown(void* screen, int key) {
 	static const cc_string slash = String_FromConst("/");
 	struct ChatScreen* s = (struct ChatScreen*)screen;
-	int playerListKey   = KeyBinds[KEYBIND_TABLIST];
-	cc_bool handlesList = playerListKey != IPT_TAB || !Gui.TabAutocomplete || !s->grabsInput;
+	int playerListKey    = KeyBinds_Normal[KEYBIND_TABLIST];
+	cc_bool handlesList  = playerListKey != CCKEY_TAB || !Gui.TabAutocomplete || !s->grabsInput;
 
-	if (key == playerListKey && handlesList) {
+	if (KeyBind_Claims(KEYBIND_TABLIST, key) && handlesList) {
 		if (!tablist_active && !Server.IsSinglePlayer) {
 			TabListOverlay_Show();
 		}
@@ -1213,27 +1258,27 @@ static int ChatScreen_KeyDown(void* screen, int key) {
 	if (s->grabsInput) {
 #ifdef CC_BUILD_WEB
 		/* See reason for this in HandleInputUp */
-		if (key == KeyBinds[KEYBIND_SEND_CHAT] || key == IPT_KP_ENTER) {
+		if (KeyBind_Claims(KEYBIND_SEND_CHAT, key) || key == CCKEY_KP_ENTER) {
 			ChatScreen_EnterChatInput(s, false);
 #else
-		if (key == KeyBinds[KEYBIND_SEND_CHAT] || key == IPT_KP_ENTER || key == IPT_ESCAPE) {
-			ChatScreen_EnterChatInput(s, key == IPT_ESCAPE);
+		if (KeyBind_Claims(KEYBIND_SEND_CHAT, key) || key == CCKEY_KP_ENTER || Input_IsEscapeButton(key)) {
+			ChatScreen_EnterChatInput(s, Input_IsEscapeButton(key));
 #endif
-		} else if (key == IPT_PAGEUP) {
+		} else if (key == CCKEY_PAGEUP) {
 			ChatScreen_ScrollChatBy(s, -Gui.Chatlines);
-		} else if (key == IPT_PAGEDOWN) {
+		} else if (key == CCKEY_PAGEDOWN) {
 			ChatScreen_ScrollChatBy(s, +Gui.Chatlines);
 		} else {
 			Elem_HandlesKeyDown(&s->input.base, key);
 		}
-		return key < IPT_F1 || key > IPT_F24;
+		return key < CCKEY_F1 || key > CCKEY_F24;
 	}
 
-	if (key == KeyBinds[KEYBIND_CHAT]) {
+	if (KeyBind_Claims(KEYBIND_CHAT, key)) {
 		ChatScreen_OpenInput(&String_Empty);
-	} else if (key == IPT_SLASH) {
+	} else if (key == CCKEY_SLASH) {
 		ChatScreen_OpenInput(&slash);
-	} else if (key == KeyBinds[KEYBIND_INVENTORY]) {
+	} else if (KeyBind_Claims(KEYBIND_INVENTORY, key)) {
 		InventoryScreen_Show();
 	} else {
 		return false;
@@ -1252,10 +1297,10 @@ static void ChatScreen_KeyUp(void* screen, int key) {
 
 #ifdef CC_BUILD_WEB
 	/* See reason for this in HandleInputUp */
-	if (key == IPT_ESCAPE) ChatScreen_EnterChatInput(s, true);
+	if (key == CCKEY_ESCAPE) ChatScreen_EnterChatInput(s, true);
 #endif
 
-	if (Server.SupportsFullCP437 && key == KeyBinds[KEYBIND_EXT_INPUT]) {
+	if (Server.SupportsFullCP437 && KeyBind_Claims(KEYBIND_EXT_INPUT, key)) {
 		if (!WindowInfo.Focused) return;
 		ChatScreen_ToggleAltInput(s);
 	}
@@ -1409,13 +1454,14 @@ void ChatScreen_OpenInput(const cc_string* text) {
 	s->grabsInput        = true;
 
 	Gui_UpdateInputGrab();
+	String_Copy(&s->input.base.text, text);
+
 	OpenKeyboardArgs_Init(&args, text, KEYBOARD_TYPE_TEXT | KEYBOARD_FLAG_SEND);
 	args.placeholder = "Enter chat";
 	args.multiline   = true;
 	Window_OpenKeyboard(&args);
-	s->input.base.disabled = args.opaque;
 
-	String_Copy(&s->input.base.text, text);
+	Widget_SetDisabled(&s->input.base, args.opaque);
 	InputWidget_UpdateText(&s->input.base);
 }
 
@@ -1583,9 +1629,9 @@ static int InventoryScreen_KeyDown(void* screen, int key) {
 	struct InventoryScreen* s = (struct InventoryScreen*)screen;
 	struct TableWidget* table = &s->table;
 
-	if (key == KeyBinds[KEYBIND_INVENTORY] && s->releasedInv) {
+	if (KeyBind_Claims(KEYBIND_INVENTORY, key) && s->releasedInv) {
 		Gui_Remove((struct Screen*)s);
-	} else if (key == IPT_ENTER && table->selectedIndex != -1) {
+	} else if (Input_IsEnterButton(key) && table->selectedIndex != -1) {
 		Inventory_SetSelectedBlock(table->blocks[table->selectedIndex]);
 		Gui_Remove((struct Screen*)s);
 	} else if (Elem_HandlesKeyDown(table, key)) {
@@ -1603,7 +1649,7 @@ static cc_bool InventoryScreen_IsHotbarActive(void) {
 
 static void InventoryScreen_KeyUp(void* screen, int key) {
 	struct InventoryScreen* s = (struct InventoryScreen*)screen;
-	if (key == KeyBinds[KEYBIND_INVENTORY]) s->releasedInv = true;
+	if (KeyBind_Claims(KEYBIND_INVENTORY, key)) s->releasedInv = true;
 }
 
 static int InventoryScreen_PointerDown(void* screen, int id, int x, int y) {
@@ -1931,7 +1977,7 @@ static struct DisconnectScreen {
 	cc_string titleStr, messageStr;
 } DisconnectScreen;
 
-static struct Widget* disconnect_widgets[4] = {
+static struct Widget* disconnect_widgets[] = {
 	(struct Widget*)&DisconnectScreen.title, 
 	(struct Widget*)&DisconnectScreen.message,
 	(struct Widget*)&DisconnectScreen.reconnect,
@@ -1960,7 +2006,7 @@ static void DisconnectScreen_UpdateReconnect(struct DisconnectScreen* s) {
 		if (secsLeft > 0) {
 			String_Format1(&msg, "Reconnect in %i", &secsLeft);
 		}
-		s->reconnect.disabled = secsLeft > 0;
+		Widget_SetDisabled(&s->reconnect, secsLeft > 0);
 	}
 
 	if (!msg.length) String_AppendConst(&msg, "Reconnect");
@@ -2003,7 +2049,7 @@ static void DisconnectScreen_Init(void* screen) {
 
 	ButtonWidget_Init(&s->reconnect, 300, DisconnectScreen_OnReconnect);
 	ButtonWidget_Init(&s->quit,      300, DisconnectScreen_OnQuit);
-	s->reconnect.disabled = !s->canReconnect;
+	if (!s->canReconnect) s->reconnect.flags = WIDGET_FLAG_DISABLED;
 
 	/* NOTE: changing VSync can't be done within frame, causes crash on some GPUs */
 	Gfx_SetFpsLimit(Game_FpsLimit == FPS_LIMIT_VSYNC, 1000 / 5.0f);
@@ -2044,7 +2090,7 @@ static void DisconnectScreen_Free(void* screen) { Game_SetFpsLimit(Game_FpsLimit
 static const struct ScreenVTABLE DisconnectScreen_VTABLE = {
 	DisconnectScreen_Init,   DisconnectScreen_Update, DisconnectScreen_Free,
 	DisconnectScreen_Render, Screen_BuildMesh,
-	Screen_InputDown,        Screen_InputUp,          Screen_TKeyPress, Screen_TText,
+	Menu_InputDown,          Screen_InputUp,          Screen_TKeyPress, Screen_TText,
 	Menu_PointerDown,        Screen_PointerUp,        Menu_PointerMove, Screen_TMouseScroll,
 	DisconnectScreen_Layout, DisconnectScreen_ContextLost, DisconnectScreen_ContextRecreated
 };
@@ -2142,7 +2188,7 @@ static void TouchScreen_HalfClick(void* s, void* w) {
 static void TouchScreen_BindClick(void* screen, void* widget) {
 	struct TouchScreen* s = (struct TouchScreen*)screen;
 	int i   = Screen_Index(screen, widget) - ONSCREEN_MAX_BTNS;
-	Input_Set(KeyBinds[s->descs[i].bind], true);
+	Input_Set(KeyBinds_Normal[s->descs[i].bind], true);
 }
 
 static const struct TouchButtonDesc onscreenDescs[ONSCREEN_MAX_BTNS] = {
@@ -2180,7 +2226,8 @@ static void TouchScreen_InitButtons(struct TouchScreen* s) {
 		desc = &onscreenDescs[i];
 
 		ButtonWidget_Init(&s->onscreen[j], 100, desc->OnClick);
-		if (desc->enabled) s->onscreen[j].disabled = !(*desc->enabled);
+		if (desc->enabled) Widget_SetDisabled(&s->onscreen[j], !(*desc->enabled));
+
 		s->onscreenDescs[j] = desc;
 		s->widgets[j]       = (struct Widget*)&s->onscreen[j];
 		j++;
@@ -2273,7 +2320,7 @@ static void TouchScreen_PointerUp(void* screen, int id, int x, int y) {
 		if (!(s->btns[i].active & id)) continue;
 
 		if (s->descs[i].bind < KEYBIND_COUNT) {
-			Input_Set(KeyBinds[s->descs[i].bind], false);
+			Input_Set(KeyBinds_Normal[s->descs[i].bind], false);
 		}
 		s->btns[i].active &= ~id;
 		return;

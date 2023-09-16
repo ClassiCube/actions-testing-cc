@@ -346,6 +346,7 @@ void Window_Init(void) {
     // keyboard now shifts up
     WindowInfo.SoftKeyboard = SOFT_KEYBOARD_SHIFT;
     Input_SetTouchMode(true);
+    Input.Sources = INPUT_SOURCE_NORMAL;
     
     DisplayInfo.Depth  = 32;
     DisplayInfo.ScaleX = 1; // TODO dpi scale
@@ -431,8 +432,8 @@ void ShowDialogCore(const char* title, const char* msg) {
 
 // === UITextFieldDelegate ===
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
-    Input_SetPressed(IPT_ENTER);
-    Input_SetReleased(IPT_ENTER);
+    Input_SetPressed(CCKEY_ENTER);
+    Input_SetReleased(CCKEY_ENTER);
     return YES;
 }
 @end
@@ -1193,7 +1194,7 @@ static CGContextRef win_ctx;
 void LBackend_MarkDirty(void* widget) { }
 void LBackend_Tick(void) { }
 void LBackend_Free(void) { }
-void LBackend_UpdateLogoFont(void) { }
+void LBackend_UpdateTitleFont(void) { }
 
 static void DrawText(NSAttributedString* str, struct Context2D* ctx, int x, int y) {
     CTLineRef line = CTLineCreateWithAttributedString((CFAttributedStringRef)str);
@@ -1204,11 +1205,11 @@ static void DrawText(NSAttributedString* str, struct Context2D* ctx, int x, int 
     CTLineDraw(line, win_ctx);
 }
 
-void LBackend_DrawLogo(struct Context2D* ctx, const char* title) {
+void LBackend_DrawTitle(struct Context2D* ctx, const char* title) {
     if (Launcher_BitmappedText()) {
         struct FontDesc font;
-        Launcher_MakeLogoFont(&font);
-        Launcher_DrawLogo(&font, title, ctx);
+        Launcher_MakeTitleFont(&font);
+        Launcher_DrawTitle(&font, title, ctx);
         // bitmapped fonts don't need to be freed
         return;
     }

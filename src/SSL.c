@@ -417,68 +417,135 @@ cc_result SSL_Free(void* ctx_) {
 	Mem_Free(ctx);
 	return 0; 
 }
-#elif defined CC_BUILD_3DS
-#include <3ds.h>
+#elif defined CC_BUILD_BEARSSL
 #include "String.h"
-// https://github.com/devkitPro/3ds-examples/blob/master/network/sslc/source/ssl.c
-// https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/services/sslc.h
-static u32 certChainHandle;
+#include "bearssl.h"
+#include "../misc/certs.h"
+// https://github.com/unkaktus/bearssl/blob/master/samples/client_basic.c#L283
+#define SSL_ERROR_SHIFT 0xB5510000
+
+typedef struct SSLContext {
+	br_ssl_client_context sc;
+	br_x509_minimal_context xc;
+	unsigned char iobuf[BR_SSL_BUFSIZE_BIDI];
+	br_sslio_context ioc;
+} SSLContext;
+
 static cc_bool _verifyCerts;
-static void SSL_CreateRootChain(void) {
-	int ret = sslcCreateRootCertChain(&certChainHandle);
-	if (ret) { Platform_Log1("sslcCreateRootCertChain failed: %i", &ret); return; }
-}
+
 
 void SSLBackend_Init(cc_bool verifyCerts) {
-	int ret = sslcInit(0);
-	if (ret) { Platform_Log1("sslcInit failed: %i", &ret); return; }
-	
-	_verifyCerts = verifyCerts;
-	SSL_CreateRootChain();
+	_verifyCerts = verifyCerts; // TODO support
 }
-cc_bool SSLBackend_DescribeError(cc_result res, cc_string* dst) { return false; }
+
+cc_bool SSLBackend_DescribeError(cc_result res, cc_string* dst) { 
+	return false; // TODO: error codes 
+}
+
+#if defined CC_BUILD_3DS
+#include <3ds.h>
+static void InjectEntropy(SSLContext* ctx) {
+	char buf[32];
+	int res = PS_GenerateRandomBytes(buf, 32);
+	if (res == 0) return; // NOTE: Not implemented in Citra
+	
+	br_ssl_engine_inject_entropy(&ctx->sc.eng, buf, 32);
+}
+#elif defined CC_BUILD_GCWII
+static void InjectEntropy(SSLContext* ctx) {
+	char buf[32];
+	// TODO: Is there an actual API to retrieve random data?
+	
+	br_ssl_engine_inject_entropy(&ctx->sc.eng, buf, 32);
+}
+#elif defined CC_BUILD_PSP
+static void InjectEntropy(SSLContext* ctx) {
+	char buf[32];
+	// TODO: Is there an actual API to retrieve random data?
+
+	br_ssl_engine_inject_entropy(&ctx->sc.eng, buf, 32);
+}
+#elif defined CC_BUILD_VITA
+static void InjectEntropy(SSLContext* ctx) {
+	char buf[32];
+	// TODO: Is there an actual API to retrieve random data?
+
+	br_ssl_engine_inject_entropy(&ctx->sc.eng, buf, 32);
+}
+#else
+static void InjectEntropy(SSLContext* ctx) { }
+#endif
+
+static int sock_read(void *ctx, unsigned char *buf, size_t len) {
+	cc_uint32 read;
+	cc_result res = Socket_Read((int)ctx, buf, len, &read);
+	
+	if (res) return -1;
+	return read;
+}
+
+static int sock_write(void *ctx, const unsigned char *buf, size_t len) {
+	cc_uint32 wrote;
+	cc_result res = Socket_Write((int)ctx, buf, len, &wrote);
+	
+	if (res) return -1;
+	return wrote;
+}
 
 cc_result SSL_Init(cc_socket socket, const cc_string* host_, void** out_ctx) {
-	if (!certChainHandle) return HTTP_ERR_NO_SSL;
-	int ret;
-	
-	sslcContext* ctx;
+	SSLContext* ctx;
 	char host[NATIVE_STR_LEN];
 	String_EncodeUtf8(host, host_);
 	
-	ctx = Mem_TryAllocCleared(1, sizeof(sslcContext));
+	ctx = Mem_TryAlloc(1, sizeof(SSLContext));
 	if (!ctx) return ERR_OUT_OF_MEMORY;
 	*out_ctx = (void*)ctx;
 	
-	int opts = _verifyCerts ? SSLCOPT_Default : SSLCOPT_DisableVerify;
-	if ((ret = sslcCreateContext(ctx, socket, opts, host))) return ret;
-	sslcContextSetRootCertChain(ctx, certChainHandle);
+	br_ssl_client_init_full(&ctx->sc, &ctx->xc, TAs, TAs_NUM);
+	/*if (!_verify_certs) {
+		br_x509_minimal_set_rsa(&ctx->xc,   &br_rsa_i31_pkcs1_vrfy);
+		br_x509_minimal_set_ecdsa(&ctx->xc, &br_ec_prime_i31, &br_ecdsa_i31_vrfy_asn1);
+	}*/
+	InjectEntropy(ctx);
+
+	br_ssl_engine_set_buffer(&ctx->sc.eng, ctx->iobuf, sizeof(ctx->iobuf), 1);
+	br_ssl_client_reset(&ctx->sc, host, 0);
 	
-	// detect lack of proper SSL support in Citra
-	if (!ctx->sslchandle) return HTTP_ERR_NO_SSL;
-	if ((ret = sslcStartConnection(ctx, NULL, NULL))) return ret;
+	br_sslio_init(&ctx->ioc, &ctx->sc.eng, 
+			sock_read,  (void*)socket, 
+			sock_write, (void*)socket);
+	
 	return 0;
 }
 
 cc_result SSL_Read(void* ctx_, cc_uint8* data, cc_uint32 count, cc_uint32* read) { 
-	sslcContext* ctx = (sslcContext*)ctx_;
-	int ret = sslcRead(ctx, data, count, false);
+	SSLContext* ctx = (SSLContext*)ctx_;
+	// TODO: just br_sslio_write ??
+	int res = br_sslio_read(&ctx->ioc, data, count);
+	if (res < 0) return SSL_ERROR_SHIFT + br_ssl_engine_last_error(&ctx->sc.eng);
 	
-	if (ret < 0) return ret;
-	*read = ret; return 0;
+	br_sslio_flush(&ctx->ioc);
+	*read = res;
+	return 0;
 }
 
-cc_result SSL_Write(void* ctx_, const cc_uint8* data, cc_uint32 count, cc_uint32* wrote) { 
-	sslcContext* ctx = (sslcContext*)ctx_;
-	int ret = sslcWrite(ctx, data, count);
+cc_result SSL_Write(void* ctx_, const cc_uint8* data, cc_uint32 count, cc_uint32* wrote) {
+	SSLContext* ctx = (SSLContext*)ctx_;
+	// TODO: just br_sslio_write ??
+	int res = br_sslio_write_all(&ctx->ioc, data, count);
+	if (res < 0) return SSL_ERROR_SHIFT + br_ssl_engine_last_error(&ctx->sc.eng);
 	
-	if (ret < 0) return ret;
-	*wrote = ret; return 0;
+	br_sslio_flush(&ctx->ioc);
+	*wrote = res;
+	return 0;
 }
 
-cc_result SSL_Free(void* ctx_) { 
-	sslcContext* ctx = (sslcContext*)ctx_;
-	return sslcDestroyContext(ctx);
+cc_result SSL_Free(void* ctx_) {
+	SSLContext* ctx = (SSLContext*)ctx_;
+	if (ctx) br_sslio_close(&ctx->ioc);
+	
+	Mem_Free(ctx_);
+	return 0;
 }
 #else
 void SSLBackend_Init(cc_bool verifyCerts) { }
