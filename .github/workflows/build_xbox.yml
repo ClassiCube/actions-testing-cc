@@ -16,7 +16,7 @@ jobs:
       - name: Compile Xbox build
         id: compile
         run: |
-          /usr/src/nxdk/bin/activate -s
+          eval $(/usr/src/nxdk/bin/activate -s)
           make xbox
 
       - uses: ./.github/actions/notify_failure
