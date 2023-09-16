@@ -13,6 +13,11 @@ jobs:
       image: ghcr.io/xboxdev/nxdk:git-e955705a
     steps:
       - uses: actions/checkout@v3
+      - name: Setup nxdk env
+        id: setup-nxdk
+        run: |
+          /usr/src/nxdk/bin/activate
+          
       - name: Compile Xbox build
         id: compile
         run: |
