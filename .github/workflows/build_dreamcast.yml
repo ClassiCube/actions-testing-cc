@@ -1,45 +1,37 @@
-name: Build latest (Xbox)
+name: Build latest (Dreamcast)
 on: [push]
 
 concurrency:
-  group: ${{ github.ref }}-xbox
+  group: ${{ github.ref }}-dreamcast
   cancel-in-progress: true
 
 jobs:
-  build-Xbox:
+  build:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/xboxdev/nxdk:git-e955705a
+      image: kazade/dreamcast-sdk
     steps:
       - uses: actions/checkout@v3
-      - name: Compile Xbox build
+      - name: Compile Dreamcast build
         id: compile
         run: |
-          eval $(/usr/src/nxdk/bin/activate -s)
-          make xbox
-          
-
-      # otherwise notify_failure doesn't work
-      - name: Install curl when necessary
-        if: ${{ always() && steps.compile.outcome == 'failure' }}
-        run: apk add curl curl-dev
+          make dreamcast
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
-          NOTIFY_MESSAGE: 'Failed to compile Xbox build'
+          NOTIFY_MESSAGE: 'Failed to compile Dreamcast build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-dc.elf'
+          DEST_NAME: 'ClassiCube-dc.elf'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube.xbe'
-          DEST_NAME: 'ClassiCube-xbox.xbe'
-          
-      - uses: ./.github/actions/upload_build
-        if: ${{ always() && steps.compile.outcome == 'success' }}
-        with:
-          SOURCE_FILE: 'ClassiCube-xbox.iso'
-          DEST_NAME: 'ClassiCube-xbox.iso'
+          SOURCE_FILE: 'ClassiCube-dc.iso'
+          DEST_NAME: 'ClassiCube-dc.iso'
