@@ -156,7 +156,7 @@ wii:
 gamecube:
 	$(MAKE) -f misc/gc/Makefile PLAT=gamecube
 dreamcast:
-	$(MAKE) -f src/Makefile_dreamcast PLAT=dreamcast
+	$(MAKE) -f misc/dreamcast/Makefile PLAT=dreamcast
 xbox:
 	$(MAKE) -f src/Makefile_xbox PLAT=xbox
 xbox360:
