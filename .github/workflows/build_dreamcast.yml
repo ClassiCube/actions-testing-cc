@@ -16,6 +16,7 @@ jobs:
       - name: Compile Dreamcast build
         id: compile
         run: |
+          source /opt/toolchains/dc/kos/environ.sh
           make dreamcast
 
       - uses: ./.github/actions/notify_failure
