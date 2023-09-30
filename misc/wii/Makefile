@@ -25,7 +25,7 @@ INCLUDES	:= third_party/bearssl/inc
 # options for code generation
 #---------------------------------------------------------------------------------
 
-CFLAGS		=	-g -Wall $(MACHDEP) $(INCLUDE)
+CFLAGS		=	-g -O2 -Wall $(MACHDEP) $(INCLUDE)
 CXXFLAGS	=	$(CFLAGS)
 
 LDFLAGS	=	-g $(MACHDEP) -Wl,-Map,$(notdir $@).map

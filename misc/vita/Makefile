@@ -5,12 +5,12 @@ TARGET 			:= ClassiCube-vita
 BUILD_DIR		:= build-vita
 SOURCE_DIRS		:= src third_party/bearssl/src
 
-CFLAGS 	+= -Wl,-q -Ithird_party/bearssl/inc -O1
+CFLAGS += -Wl,-q -Ithird_party/bearssl/inc -O1
 C_FILES := $(foreach dir,$(SOURCE_DIRS),$(wildcard $(dir)/*.c))
 OBJS 	:= $(addprefix $(BUILD_DIR)/, $(notdir $(C_FILES:%.c=%.o)))
 
 # Needed by psvDebugScreenPrintf
-LIBS += -lm -lSceDisplay_stub -lSceCtrl_stub -lSceTouch_stub -lSceGxm_stub
+LIBS += -lm -lSceDisplay_stub -lSceCtrl_stub -lSceTouch_stub -lSceGxm_stub -lScePvf_stub 
 
 
 #---------------------------------------------------------------------------------

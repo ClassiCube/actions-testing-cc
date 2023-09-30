@@ -3,7 +3,7 @@ SOURCES	= $(wildcard src/*.c) $(wildcard third_party/bearssl/src/*.c)
 OBJS   	= $(patsubst %.c, %.o, $(SOURCES))
 
 INCDIR   = third_party/bearssl/inc
-CFLAGS   = -g -fno-math-errno
+CFLAGS   = -g -O1 -fno-math-errno
 ASFLAGS  = $(CFLAGS)
 
 LIBDIR  =
