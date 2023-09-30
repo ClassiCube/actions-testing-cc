@@ -36,10 +36,19 @@ cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
 	if (end < beg) return 0;
 	return (end - beg) / 1000;
 }
+// Borrowed from kos/kernel/arch/dreamcast/kernel/timer.c so it compiles
+//  with older toolchain versions
+#define NS_PER_CYCLE 5
 
 cc_uint64 Stopwatch_Measure(void) {
-	return timer_ns_gettime64();
+	uint64 cycles = perf_cntr_count(PRFC0);
+        return cycles * NS_PER_CYCLE;
 }
+static void Stopwatch_Init(void) {
+	perf_cntr_start(PRFC0, PMCR_ELAPSED_TIME_MODE, PMCR_COUNT_CPU_CYCLES);
+}
+// NOTE: If using newer toolchain versions, only need this:
+//  cc_uint64 Stopwatch_Measure(void) { return timer_ns_gettime64(); }
 
 void Platform_Log(const char* msg, int len) {
 	fs_write(STDOUT_FILENO, msg,  len);
@@ -420,7 +429,7 @@ cc_result Process_StartOpen(const cc_string* args) {
 }
 
 void Platform_Init(void) {
-	/*pspDebugSioInit();*/ 
+	Stopwatch_Init();
 	
 	char cwd[600] = { 0 };
 	char* ptr = getcwd(cwd, 600);
