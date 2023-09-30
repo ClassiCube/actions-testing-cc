@@ -26,7 +26,7 @@ $(GLDC_LIB):
 
 # TODO add textures to misc folder ?	
 $(CC_TEXTURES): 
-	wget http://www.classicube.net/static/default.zip -O $@
+	curl http://www.classicube.net/static/default.zip -o $@
 	
 $(BUILD_DIR)/%.o: src/%.c
 	kos-cc $(CFLAGS) -c $< -o $@
