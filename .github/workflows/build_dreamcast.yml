@@ -35,5 +35,5 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube-dc.iso'
-          DEST_NAME: 'ClassiCube-dc.iso'
+          SOURCE_FILE: 'ClassiCube-dc.cdi'
+          DEST_NAME: 'ClassiCube-dc.cdi'
