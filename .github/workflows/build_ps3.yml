@@ -6,7 +6,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-PSP:
+  build-PS3:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     container:
@@ -16,6 +16,7 @@ jobs:
       - name: Compile PS3 build
         id: compile
         run: |
+          apt install make
           make ps3
 
       - uses: ./.github/actions/notify_failure
