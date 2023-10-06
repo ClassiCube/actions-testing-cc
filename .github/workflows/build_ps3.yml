@@ -17,6 +17,7 @@ jobs:
         id: compile
         run: |
           pacman -S make --noconfirm
+          export PS3DEV=/usr/local/ps3dev
           make ps3
 
       - uses: ./.github/actions/notify_failure
