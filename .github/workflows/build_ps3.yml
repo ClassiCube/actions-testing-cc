@@ -1,33 +1,31 @@
-name: Build latest (Dreamcast)
+name: Build latest (PS3)
 on: [push]
 
 concurrency:
-  group: ${{ github.ref }}-dreamcast
+  group: ${{ github.ref }}-ps3
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-PSP:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     container:
-      image: kazade/dreamcast-sdk
+      image: akusiroyo/ps3sdk:latest
     steps:
       - uses: actions/checkout@v3
-      - name: Compile Dreamcast build
+      - name: Compile PS3 build
         id: compile
         run: |
-          source /opt/toolchains/dc/kos/environ.sh
-          export PATH=/opt/toolchains/dc/kos/utils/img4dc/build/cdi4dc/:$PATH
-          make dreamcast
+          make ps3
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
-          NOTIFY_MESSAGE: 'Failed to compile Dreamcast build'
+          NOTIFY_MESSAGE: 'Failed to compile PS3 build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube-dc.cdi'
-          DEST_NAME: 'ClassiCube-dc.cdi'
+          SOURCE_FILE: 'ClassiCube-ps3.self'
+          DEST_NAME: 'ClassiCube-ps3.self'
