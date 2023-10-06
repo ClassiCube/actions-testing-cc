@@ -148,7 +148,7 @@ psp:
 vita:
 	$(MAKE) -f misc/vita/Makefile PLAT=vita
 ps3:
-	$(MAKE) -f src/Makefile_PS3 PLAT=ps3
+	$(MAKE) -f misc/ps3/Makefile PLAT=ps3
 3ds:
 	$(MAKE) -f misc/3ds/Makefile PLAT=3ds
 wii:
@@ -158,7 +158,7 @@ gamecube:
 dreamcast:
 	$(MAKE) -f misc/dreamcast/Makefile PLAT=dreamcast
 xbox:
-	$(MAKE) -f src/Makefile_xbox PLAT=xbox
+	$(MAKE) -f misc/xbox/Makefile PLAT=xbox
 xbox360:
 	$(MAKE) -f src/Makefile_xbox360 PLAT=xbox360
 	
