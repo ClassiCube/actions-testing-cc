@@ -16,7 +16,7 @@ jobs:
       - name: Compile PS3 build
         id: compile
         run: |
-          apk add make
+          pacman -S make
           make ps3
 
       - uses: ./.github/actions/notify_failure
