@@ -16,7 +16,7 @@ jobs:
       - name: Compile PS3 build
         id: compile
         run: |
-          apt install make
+          apk add make
           make ps3
 
       - uses: ./.github/actions/notify_failure
