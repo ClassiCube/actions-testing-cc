@@ -405,11 +405,10 @@ static void ResetFrameState(void) {
 	rsxSetColorMaskMrt(context, 0);
 	rsxSetClearColor(context, clearColor);
 	rsxSetClearDepthStencil(context, 0xFFFFFFFF);
-	rsxSetFrontFace(context, GCM_FRONTFACE_CCW);
 
 	rsxSetDepthFunc(context, GCM_LEQUAL);	
-	rsxSetDepthWriteEnable(context, depth_write & depth_test);
-	rsxSetDepthTestEnable(context,  depth_test);
+	rsxSetDepthWriteEnable(context, true);
+	rsxSetDepthTestEnable(context,  true);
 	
 	rsxSetUserClipPlaneControl(context, GCM_USER_CLIP_PLANE_DISABLE,
 						GCM_USER_CLIP_PLANE_DISABLE,

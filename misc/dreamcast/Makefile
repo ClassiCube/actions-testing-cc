@@ -1,5 +1,5 @@
 BUILD_DIR		:= build-dreamcast
-SOURCE_DIRS		:= src
+SOURCE_DIRS		:= src third_party/bearssl/src
 
 C_FILES := $(foreach dir,$(SOURCE_DIRS),$(wildcard $(dir)/*.c))
 OBJS 	:= $(addprefix $(BUILD_DIR)/, $(notdir $(C_FILES:%.c=%.o)))
