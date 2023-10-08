@@ -418,10 +418,15 @@ cc_result SSL_Free(void* ctx_) {
 	return 0; 
 }
 #elif defined CC_BUILD_BEARSSL
+
+/* The x86 intrinsics seem to be incomplete with what aes_x86ni expects when compiling with NXDK */
+#ifdef CC_BUILD_XBOX
+#define BR_AES_X86NI 0
+#endif
 #include "String.h"
 #include "bearssl.h"
 #include "../misc/certs.h"
-// https://github.com/unkaktus/bearssl/blob/master/samples/client_basic.c#L283
+/* https://github.com/unkaktus/bearssl/blob/master/samples/client_basic.c#L283 */
 #define SSL_ERROR_SHIFT 0xB5510000
 
 typedef struct SSLContext {
@@ -457,7 +462,7 @@ cc_bool SSLBackend_DescribeError(cc_result res, cc_string* dst) {
 static void InjectEntropy(SSLContext* ctx) {
 	char buf[32];
 	PS_GenerateRandomBytes(buf, 32);
-	// NOTE: PS_GenerateRandomBytes isn't implemented in Citra
+	/* NOTE: PS_GenerateRandomBytes isn't implemented in Citra */
 	
 	br_ssl_engine_inject_entropy(&ctx->sc.eng, buf, 32);
 }
@@ -465,7 +470,7 @@ static void InjectEntropy(SSLContext* ctx) {
 #warning "Using uninitialised stack data for entropy. This should be replaced with actual cryptographic RNG data"
 static void InjectEntropy(SSLContext* ctx) {
 	char buf[32];
-	// TODO: Use actual APIs to retrieve random data
+	/* TODO: Use actual APIs to retrieve random data */
 	
 	br_ssl_engine_inject_entropy(&ctx->sc.eng, buf, 32);
 }
