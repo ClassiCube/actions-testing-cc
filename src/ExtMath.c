@@ -10,6 +10,10 @@ float Math_AbsF(float x)  { return fabsf(x); /* MSVC intrinsic */ }
 float Math_SqrtF(float x) { return sqrtf(x); /* MSVC intrinsic */ }
 #endif
 
+#ifdef CC_BUILD_DREAMCAST
+double make_actions_build_compile(void) { fabs(4); }
+#endif
+
 float Math_Mod1(float x)  { return x - (int)x; /* fmodf(x, 1); */ }
 int   Math_AbsI(int x)    { return abs(x); /* MSVC intrinsic */ }
 

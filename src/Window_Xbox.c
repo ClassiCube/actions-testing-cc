@@ -74,7 +74,7 @@ void Window_Init(void) {
 	WindowInfo.Focused = true;
 	WindowInfo.Exists  = true;
 
-	Input.GamepadSource = true;
+	Input.Sources = INPUT_SOURCE_GAMEPAD;
 	usbh_core_init();
 	usbh_xid_init();
 	
@@ -98,7 +98,7 @@ void Window_Show(void) { }
 void Window_SetSize(int width, int height) { }
 
 void Window_Close(void) {
-	/* TODO implement */
+	Event_RaiseVoid(&WindowEvents.Closing);
 }
 
 
@@ -130,6 +130,8 @@ static void HandleButtons(xid_gamepad_in* gp) {
 	
 	Input_SetNonRepeatable(CCPAD_START,  mods & XINPUT_GAMEPAD_START);
 	Input_SetNonRepeatable(CCPAD_SELECT, mods & XINPUT_GAMEPAD_BACK);
+	Input_SetNonRepeatable(CCPAD_LSTICK, mods & XINPUT_GAMEPAD_LEFT_THUMB);
+	Input_SetNonRepeatable(CCPAD_RSTICK, mods & XINPUT_GAMEPAD_RIGHT_THUMB);
 	
 	Input_SetNonRepeatable(CCPAD_LEFT,   mods & XINPUT_GAMEPAD_DPAD_LEFT);
 	Input_SetNonRepeatable(CCPAD_RIGHT,  mods & XINPUT_GAMEPAD_DPAD_RIGHT);
