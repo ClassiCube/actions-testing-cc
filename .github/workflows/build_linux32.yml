@@ -16,7 +16,7 @@ jobs:
         id: compile
         env: 
           COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn"
-          NIX64_FLAGS:  "-no-pie -fno-pie -m32 -fvisibility=hidden -fcf-protection=none -rdynamic -DCC_BUILD_ICON"
+          NIX32_FLAGS:  "-no-pie -fno-pie -m32 -fvisibility=hidden -fcf-protection=none -rdynamic -DCC_BUILD_ICON"
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get -y update
