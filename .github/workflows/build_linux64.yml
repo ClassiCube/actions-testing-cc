@@ -15,9 +15,9 @@ jobs:
         shell: bash
         id: compile
         run: |
-          ALL_FLAGS   ="-O1 -s -fno-stack-protector -fno-math-errno -Qn"
+          ALL_FLAGS="-O1 -s -fno-stack-protector -fno-math-errno -Qn"
           NIX64_FLAGS ="-no-pie -fno-pie -m64 -fvisibility=hidden -fcf-protection=none -rdynamic -DCC_BUILD_ICON"
-          LATEST      =$(git rev-parse --short "$GITHUB_SHA")
+          LATEST=$(git rev-parse --short "$GITHUB_SHA")
           
           gcc *.c $ALL_FLAGS $NIX64_FLAGS -DCC_COMMIT_SHA=\"$LATEST\" -o cc-nix64-gl1 -lX11 -lXi -lpthread -lGL -lm -ldl
           gcc *.c $ALL_FLAGS $NIX64_FLAGS -DCC_COMMIT_SHA=\"$LATEST\" -DCC_BUILD_GLMODERN -o cc-nix64-gl2 -lX11 -lXi -lpthread -lGL -lm -ldl
