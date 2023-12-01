@@ -34,11 +34,11 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'cc-nix64-gl1'
+          SOURCE_FILE: 'src/cc-nix64-gl1'
           DEST_NAME: 'cc-nix64-gl1'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'cc-nix64-gl2'
+          SOURCE_FILE: 'src/cc-nix64-gl2'
           DEST_NAME: 'cc-nix64-gl2'
