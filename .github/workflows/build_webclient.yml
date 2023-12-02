@@ -13,7 +13,7 @@ jobs:
       - name: Setup emsdk
         uses: mymindstorm/setup-emsdk@v11
         with:
-          version: 1.38.40
+          version: 1.38.30
           actions-cache-folder: 'emsdk-cache'
       - name: Setup Python 3.x
         uses: actions/setup-python@v4
