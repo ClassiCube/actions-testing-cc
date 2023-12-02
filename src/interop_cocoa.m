@@ -209,12 +209,12 @@ void Window_Init(void) {
 /*########################################################################################################################*
 *-----------------------------------------------------------Window--------------------------------------------------------*
 *#########################################################################################################################*/
-#ifndef kCGBitmapByteOrder32Host
-// Undefined in < 10.4 SDK. No issue since < 10.4 is only Big Endian PowerPC anyways
+#if defined MAC_OS_X_VERSION_10_4
+#warning "USING AUTO HOST"
+#else
+// Doesn't exist in < 10.4 SDK. No issue since < 10.4 is only Big Endian PowerPC anyways
 #define kCGBitmapByteOrder32Host 0
 #warning "DEFINED HOST TO 0"
-#else
-#warning "USING AUTO HOST"
 #endif
 
 static void RefreshWindowBounds(void) {
