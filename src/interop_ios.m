@@ -1,4 +1,6 @@
 #define GLES_SILENCE_DEPRECATION
+#include "Core.h"
+#if defined CC_BUILD_IOS
 #include "_WindowBase.h"
 #include "Bitmap.h"
 #include "Input.h"
@@ -1659,3 +1661,4 @@ void LBackend_CloseScreen(struct LScreen* s) {
         [view removeFromSuperview];
     }
 }
+#endif

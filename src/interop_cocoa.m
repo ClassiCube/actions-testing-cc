@@ -590,11 +590,7 @@ static void OpenSaveDoCallback(NSURL* url, FileDialogCallback callback) {
 }
 
 cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
-	NSSavePanel* dlg = [NSSavePanel savePanel];
-	NSString* str;
-	const char* src;
-	int len, i;
-	
+	NSSavePanel* dlg = [NSSavePanel savePanel];	
 	// TODO: Use args->defaultName, but only macOS 10.6
 
     NSMutableArray* types = GetOpenSaveFilters(args->filters);
@@ -607,11 +603,7 @@ cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
 }
 
 cc_result Window_OpenFileDialog(const struct OpenFileDialogArgs* args) {
-    const char* const* filters = args->filters;
     NSOpenPanel* dlg = [NSOpenPanel openPanel];
-    NSString* str;
-    const char* src;
-    int len, i;
     
     NSMutableArray* types = GetOpenSaveFilters(args->filters);
     [dlg setCanChooseFiles: YES];
