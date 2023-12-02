@@ -8,14 +8,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: devkitpro/devkitarm:latest
     steps:
       - uses: actions/checkout@v3
-      - name: Install ninja
-        run: |
-          sudo apt-get -y update
-          sudo apt-get install -y ninja-build
       - name: Setup emsdk
         uses: mymindstorm/setup-emsdk@v11
         with:
@@ -23,18 +17,21 @@ jobs:
           actions-cache-folder: 'emsdk-cache'
       - name: Setup Python 3.x
         uses: actions/setup-python@v4
-      - name: Compile
+      - name: Compiles webclient
+        id: compile
         run: |
+          cd src
           emcc *.c -O1 -o ClassiCube.js --js-library interop_web.js -s WASM=0 -s LEGACY_VM_SUPPORT=1 -s ALLOW_MEMORY_GROWTH=1 -s ABORTING_MALLOC=0 -s ENVIRONMENT=web
           sed -i 's#eventHandler.useCapture);#{ useCapture: eventHandler.useCapture, passive: false });#g' ClassiCube.js
 
-  notify-failure:
-    runs-on: ubuntu-latest
-    needs: [build]
-    if: ${{ always() && (needs.build.result == 'failure') }}
-    steps:
-      - uses: actions/checkout@v3 # Necessary to access local action
       - uses: ./.github/actions/notify_failure
+        if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
-          NOTIFY_MESSAGE: 'Failed to compile webclient build'
+          NOTIFY_MESSAGE: 'Failed to compile Webclient'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'src/ClassiCube.js'
+          DEST_NAME: 'ClassiCube.js'
