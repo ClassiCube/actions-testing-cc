@@ -21,7 +21,7 @@ jobs:
         id: compile
         run: |
           cd src
-          emcc *.c -O1 -o ClassiCube.js --js-library interop_web.js -s WASM=0 -s LEGACY_VM_SUPPORT=1 -s ALLOW_MEMORY_GROWTH=1 -s ABORTING_MALLOC=0 -s ENVIRONMENT=web
+          emcc *.c -s WASM=0 -s NO_EXIT_RUNTIME=1 -s LEGACY_VM_SUPPORT=1 -s ALLOW_MEMORY_GROWTH=1 -s ABORTING_MALLOC=0 -s ENVIRONMENT=web --js-library interop_web.js -Os -g2 -s SINGLE_FILE
           sed -i 's#eventHandler.useCapture);#{ useCapture: eventHandler.useCapture, passive: false });#g' ClassiCube.js
 
       - uses: ./.github/actions/notify_failure
