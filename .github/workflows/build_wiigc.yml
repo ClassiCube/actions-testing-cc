@@ -20,7 +20,7 @@ jobs:
           make clean
           make gamecube
           
-      - name: Create Wii homebrew zip
+      - name: Create Wii homebrew
         run: |
           mkdir -p wiitest/apps/ClassiCube
           cp ClassiCube-wii.dol wiitest/apps/ClassiCube/boot.dol
