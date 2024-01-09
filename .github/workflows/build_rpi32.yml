@@ -20,7 +20,7 @@ jobs:
           RPI32_FLAGS:  "-fvisibility=hidden -rdynamic -DCC_BUILD_ICON -DCC_BUILD_RPI"
         run: |
           LATEST_FLAG=$GITHUB_SHA
-          sudo apt-get -y install libegl-dev libegl-dev libxi-dev
+          sudo apt-get -y install libegl-dev libgles2-mesa-dev libxi-dev
           
           cd src
           gcc *.c ${{ env.COMMON_FLAGS }} ${{ env.RPI32_FLAGS }} $LATEST_FLAG -o cc-rpi32 -lGLESv2 -lEGL -lX11 -lXi -lm -lpthread -ldl -lrt
