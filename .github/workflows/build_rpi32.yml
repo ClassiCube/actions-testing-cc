@@ -13,6 +13,9 @@ jobs:
       image: dockcross/linux-armv6
     steps:
       - uses: actions/checkout@v3
+      - name: Install packages
+        run: |
+          sudo apt-get -y install libegl-dev libgles2-mesa-dev libxi-dev
       - name: Compile RPI 32 bit build
         id: compile
         env: 
@@ -20,7 +23,6 @@ jobs:
           RPI32_FLAGS:  "-fvisibility=hidden -rdynamic -DCC_BUILD_ICON -DCC_BUILD_RPI"
         run: |
           LATEST_FLAG=-DCC_COMMIT_SHA=\"$GITHUB_SHA\"
-          sudo apt-get -y install libegl-dev libgles2-mesa-dev libxi-dev
           
           cd src
           gcc *.c ${{ env.COMMON_FLAGS }} ${{ env.RPI32_FLAGS }} $LATEST_FLAG -o cc-rpi32 -lGLESv2 -lEGL -lX11 -lXi -lm -lpthread -ldl -lrt
@@ -34,5 +36,5 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'cc-rpi32'
+          SOURCE_FILE: 'src/cc-rpi32'
           DEST_NAME: 'cc-rpi32'
