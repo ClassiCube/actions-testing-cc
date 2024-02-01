@@ -16,6 +16,7 @@ jobs:
       - name: Compile PS2 build
         id: compile
         run: |
+          apk add make libmpc
           make ps2
 
       - uses: ./.github/actions/notify_failure
