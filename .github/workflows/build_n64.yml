@@ -16,7 +16,7 @@ jobs:
       - name: Compile N64 build
         id: compile
         run: |
-          ls $(N64_INST)/include
+          ls /n64_toolchain/include
           make n64
 
       - uses: ./.github/actions/notify_failure
