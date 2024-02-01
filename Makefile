@@ -26,7 +26,7 @@ ifeq ($(PLAT),web)
 CC=emcc
 OEXT=.html
 CFLAGS=-g
-LDFLAGS=-s WASM=1 -s NO_EXIT_RUNTIME=1 -s ALLOW_MEMORY_GROWTH=1
+LDFLAGS=-s WASM=1 -s NO_EXIT_RUNTIME=1 -s ALLOW_MEMORY_GROWTH=1 -s TOTAL_STACK=1Mb --js-library src/interop_web.js
 endif
 
 ifeq ($(PLAT),mingw)
@@ -38,12 +38,12 @@ LIBS=-mwindows -lwinmm -limagehlp
 endif
 
 ifeq ($(PLAT),linux)
-LIBS=-lX11 -lXi -lpthread -lGL -lm -ldl
+LIBS=-lX11 -lXi -lpthread -lGL -ldl
 endif
 
 ifeq ($(PLAT),sunos)
 CFLAGS=-g -pipe -fno-math-errno
-LIBS=-lm -lsocket -lX11 -lXi -lGL
+LIBS=-lsocket -lX11 -lXi -lGL
 endif
 
 ifeq ($(PLAT),mac_x32)
@@ -62,13 +62,13 @@ endif
 ifeq ($(PLAT),freebsd)
 CFLAGS=-g -pipe -I /usr/local/include -fno-math-errno
 LDFLAGS=-L /usr/local/lib -rdynamic
-LIBS=-lexecinfo -lGL -lX11 -lXi -lm -lpthread
+LIBS=-lexecinfo -lGL -lX11 -lXi -lpthread
 endif
 
 ifeq ($(PLAT),openbsd)
 CFLAGS=-g -pipe -I /usr/X11R6/include -I /usr/local/include -fno-math-errno
 LDFLAGS=-L /usr/X11R6/lib -L /usr/local/lib -rdynamic
-LIBS=-lexecinfo -lGL -lX11 -lXi -lm -lpthread
+LIBS=-lexecinfo -lGL -lX11 -lXi -lpthread
 endif
 
 ifeq ($(PLAT),netbsd)
@@ -80,14 +80,14 @@ endif
 ifeq ($(PLAT),dragonfly)
 CFLAGS=-g -pipe -I /usr/local/include -fno-math-errno
 LDFLAGS=-L /usr/local/lib -rdynamic
-LIBS=-lexecinfo -lGL -lX11 -lXi -lm -lpthread
+LIBS=-lexecinfo -lGL -lX11 -lXi -lpthread
 endif
 
 ifeq ($(PLAT),haiku)
 OBJECTS+=src/interop_BeOS.o
 CFLAGS=-g -pipe -fno-math-errno
 LDFLAGS=-g
-LIBS=-lm -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
+LIBS=-lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
 endif
 
 ifeq ($(PLAT),beos)
@@ -103,7 +103,7 @@ endif
 
 ifeq ($(PLAT),irix)
 CC=gcc
-LIBS=-lGL -lX11 -lXi -lm -lpthread -ldl
+LIBS=-lGL -lX11 -lXi -lpthread -ldl
 endif
 
 ifeq ($(OS),Windows_NT)
@@ -149,6 +149,8 @@ vita:
 	$(MAKE) -f misc/vita/Makefile PLAT=vita
 ps3:
 	$(MAKE) -f misc/ps3/Makefile PLAT=ps3
+ps2:
+	$(MAKE) -f misc/ps2/Makefile PLAT=ps2
 3ds:
 	$(MAKE) -f misc/3ds/Makefile PLAT=3ds
 wii:
@@ -160,7 +162,9 @@ dreamcast:
 xbox:
 	$(MAKE) -f misc/xbox/Makefile PLAT=xbox
 xbox360:
-	$(MAKE) -f src/Makefile_xbox360 PLAT=xbox360
+	$(MAKE) -f misc/xbox360/Makefile PLAT=xbox360
+n64:
+	$(MAKE) -f misc/n64/Makefile PLAT=n64
 	
 clean:
 	$(DEL) $(OBJECTS)
