@@ -10,7 +10,7 @@ jobs:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/dragonminded/libdragon:opengl
+      image: ghcr.io/dragonminded/libdragon:latest
     steps:
       - uses: actions/checkout@v3
       - name: Compile N64 build
