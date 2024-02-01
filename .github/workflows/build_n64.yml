@@ -16,8 +16,7 @@ jobs:
       - name: Compile N64 build
         id: compile
         run: |
-          ls /n64_toolchain
-          ls /n64_toolchain/include
+          ls -R /n64_toolchain
           echo "AAA"
           make n64
 
