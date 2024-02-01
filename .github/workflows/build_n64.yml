@@ -16,7 +16,8 @@ jobs:
       - name: Compile N64 build
         id: compile
         run: |
-          ls -R /libdragon
+          ls /
+          ls -R /n64_toolchain
           echo "AAA"
           make n64
 
