@@ -52,20 +52,24 @@ CC_VAR extern struct _DisplayData {
 	/* GUI elements must be scaled by this to look correct. */
 	float ScaleX, ScaleY;
 	/* Position of this display. (may be non-zero in multi-monitor setup. Platform dependent) */
-	int X, Y;
+	int x, y;
 	/* Size/Dimensions of this display in pixels. */
 	int Width, Height;
 	/* Whether accounting for system DPI scaling is enabled */
 	cc_bool DPIScaling;
+	/* Amount to offset content near the edges of the window by */
+	/*  Mainly intended for when the game is rendered on TV displays, where */
+	/*  pixels on the edges of the screen may be hidden due to overscan */
+	int ContentOffsetX, ContentOffsetY;
 } DisplayInfo;
 
 /* Scales the given X coordinate from 96 dpi to current display dpi. */
-int Display_ScaleX(int x);
+static CC_INLINE int Display_ScaleX(int x) { return (int)(x * DisplayInfo.ScaleX); }
 /* Scales the given Y coordinate from 96 dpi to current display dpi. */
-int Display_ScaleY(int y);
+static CC_INLINE int Display_ScaleY(int y) { return (int)(y * DisplayInfo.ScaleY); }
 
-/* Data for the game/launcher window. */
-CC_VAR extern struct _WinData {
+/* Data for a window */
+struct _WindowData {
 	/* Readonly platform-specific handle to the window. */
 	void* Handle;
 	/* Size of the content area of the window. (i.e. area that can draw to) */
@@ -80,10 +84,18 @@ CC_VAR extern struct _WinData {
 	/* Whether this window is backgrounded / inactivated */
 	/* (rendering is not performed when window is inactive) */
 	cc_bool Inactive;
-} WindowInfo;
+};
 
-/* Initialises state for window. Also sets Display_ members. */
+/* Data for the game/launcher window */
+CC_VAR extern struct _WindowData WindowInfo; /* Named WindowInfo for backwards compatibility */
+#define Window_Main WindowInfo
+/* Data for alternate game window (e.g. 3DS) */
+extern struct _WindowData Window_Alt;
+
+/* Initialises state for window, input, and display. */
 void Window_Init(void);
+/* Potentially frees/resets state for window, input, and display. */
+void Window_Free(void);
 /* Creates a window of the given size at centre of the screen. */
 /* NOTE: The created window is compatible with 2D drawing */
 void Window_Create2D(int width, int height);
@@ -117,9 +129,9 @@ void Window_Show(void);
 /* Sets the size of the internal bounds of the window in pixels. */
 /* NOTE: This size excludes the bounds of borders + title */
 void Window_SetSize(int width, int height);
-/* Closes then destroys the window. */
-/* Raises the WindowClosing and WindowClosed events. */
-void Window_Close(void);
+/* Attempts to close the window. (And on some backends also destroys the window) */
+/* May raise the WindowClosing and WindowClosed events. */
+void Window_RequestClose(void);
 /* Processes all pending window messages/events. */
 void Window_ProcessEvents(double delta);
 

@@ -10,10 +10,6 @@ float Math_AbsF(float x)  { return fabsf(x); /* MSVC intrinsic */ }
 float Math_SqrtF(float x) { return sqrtf(x); /* MSVC intrinsic */ }
 #endif
 
-#ifdef CC_BUILD_DREAMCAST
-double make_dreamcast_build_compile(void) { fabs(4); }
-#endif
-
 float Math_Mod1(float x)  { return x - (int)x; /* fmodf(x, 1); */ }
 int   Math_AbsI(int x)    { return abs(x); /* MSVC intrinsic */ }
 
@@ -120,6 +116,27 @@ float Random_Float(RNGState* seed) {
 	return raw / ((float)(1 << 24));
 }
 
+
+/*########################################################################################################################*
+*--------------------------------------------------Transcendental functions-----------------------------------------------*
+*#########################################################################################################################*/
+static const double SQRT2 = 1.4142135623730950488016887242096980785696718753769;
+static const double LOGE2 = 0.6931471805599453094172321214581765680755001343602;
+
+#ifdef CC_BUILD_DREAMCAST
+#include <math.h>
+
+/* If don't have some code referencing libm, then gldc will fail to link with undefined reference to fabs */
+/* TODO: Properly investigate this issue */
+/* double make_dreamcast_build_compile(void) { fabs(4); } */
+
+double Math_Sin(double x)  { return sin(x); }
+double Math_Cos(double x)  { return cos(x); }
+double Math_Exp2(double x) { return exp2(x); }
+double Math_Log2(double x) { return log2(x); }
+
+double Math_Atan2(double x, double y) { return atan2(y, x); }
+#else
 /***** Caleb's Math functions *****/
 
 /* This code implements the math functions sine, cosine, arctangent, the
@@ -139,6 +156,10 @@ float Random_Float(RNGState* seed) {
  *      appendix.
  */
 
+/* NOTE: NaN/Infinity checking was removed from Cos/Sin functions, */
+/*  since ClassiCube does not care about the exact return value */
+/*  from the mathematical functions anyways */
+
 /* Global constants */
 #define PI 3.141592653589793238462643383279502884197169399
 #define DIV_2_PI (1.0 / (2.0 * PI))
@@ -149,9 +170,6 @@ static const cc_uint64 _POS_INF = 0x7FF0000000000000ULL;
 #define POS_INF *((double*)&_POS_INF)
 static const cc_uint64 _NEG_INF = 0xFFF0000000000000ULL;
 #define NEG_INF *((double*)&_NEG_INF)
-
-static const double SQRT2 = 1.4142135623730950488016887242096980785696718753769;
-static const double LOGE2 = 0.6931471805599453094172321214581765680755001343602;
 
 /* Calculates the floor of a double.
  */
@@ -231,9 +249,6 @@ static double SinStage3(double x) {
 double Math_Sin(double x) {
 	double x_div_pi;
 
-	if (x == POS_INF || x == NEG_INF || x == DBL_NAN)
-		return DBL_NAN;
-
 	x_div_pi = x * DIV_2_PI;
 	return SinStage3(x_div_pi - Floord(x_div_pi));
 }
@@ -250,9 +265,6 @@ double Math_Sin(double x) {
  */
 double Math_Cos(double x) {
 	double x_div_pi_shifted;
-
-	if (x == POS_INF || x == NEG_INF || x == DBL_NAN)
-		return DBL_NAN;
 
 	x_div_pi_shifted = x * DIV_2_PI + 0.25;
 	return SinStage3(x_div_pi_shifted - Floord(x_div_pi_shifted));
@@ -549,6 +561,8 @@ double Math_Log2(double x) {
 
 	return exponent + Log2Stage1(doi.d);
 }
+
+#endif
 
 /* Uses the property that
  *   log_e(x) = log_2(x) * log_e(2).

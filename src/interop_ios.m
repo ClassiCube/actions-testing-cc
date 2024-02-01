@@ -1,6 +1,4 @@
 #define GLES_SILENCE_DEPRECATION
-#include "Core.h"
-#if defined CC_BUILD_IOS
 #include "_WindowBase.h"
 #include "Bitmap.h"
 #include "Input.h"
@@ -22,6 +20,16 @@
 #include <OpenGLES/ES2/gl.h>
 #include <OpenGLES/ES2/glext.h>
 #include <CoreText/CoreText.h>
+
+#ifdef TARGET_OS_TV
+	// NSFontAttributeName etc - iOS 6.0
+	#define TEXT_ATTRIBUTE_FONT  NSFontAttributeName
+	#define TEXT_ATTRIBUTE_COLOR NSForegroundColorAttributeName
+#else
+	// UITextAttributeFont etc - iOS 5.0
+	#define TEXT_ATTRIBUTE_FONT  UITextAttributeFont
+	#define TEXT_ATTRIBUTE_COLOR UITextAttributeTextColor
+#endif
 
 @interface CCWindow : UIWindow
 @end
@@ -73,19 +81,23 @@ static CGRect GetViewFrame(void) {
 
 @implementation CCWindow
 
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+- (void)touchesBegan:(NSSet*)touches withEvent:(UIEvent *)event {
+    // touchesBegan:withEvent - iOS 2.0
     for (UITouch* t in touches) AddTouch(t);
 }
 
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+- (void)touchesMoved:(NSSet*)touches withEvent:(UIEvent *)event {
+    // touchesMoved:withEvent - iOS 2.0
     for (UITouch* t in touches) UpdateTouch(t);
 }
 
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+- (void)touchesEnded:(NSSet*)touches withEvent:(UIEvent *)event {
+    // touchesEnded:withEvent - iOS 2.0
     for (UITouch* t in touches) RemoveTouch(t);
 }
 
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+- (void)touchesCancelled:(NSSet*)touches withEvent:(UIEvent *)event {
+    // touchesCancelled:withEvent - iOS 2.0
     for (UITouch* t in touches) RemoveTouch(t);
 }
 
@@ -95,16 +107,19 @@ static CGRect GetViewFrame(void) {
 
 @implementation CCViewController
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    // supportedInterfaceOrientations - iOS 6.0
     return SupportedOrientations();
 }
 
 - (BOOL)shouldAutorotate {
+    // shouldAutorotate - iOS 6.0
     return YES;
 }
 
 - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id)coordinator {
-    WindowInfo.Width  = size.width;
-    WindowInfo.Height = size.height;
+    // viewWillTransitionToSize:withTransitionCoordinator - iOS 8.0
+    Window_Main.Width  = size.width;
+    Window_Main.Height = size.height;
     
     Event_RaiseVoid(&WindowEvents.Resized);
     [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
@@ -125,6 +140,7 @@ static void DeleteExportTempFile(void) {
 }
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentAtURL:(NSURL *)url {
+    // documentPicker:didPickDocumentAtURL - iOS 8.0
     NSString* str    = url.path;
     const char* utf8 = str.UTF8String;
     
@@ -139,6 +155,7 @@ static void DeleteExportTempFile(void) {
 }
 
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
+    // documentPickerWasCancelled - iOS 8.0
     DeleteExportTempFile();
 }
 
@@ -188,10 +205,12 @@ static UITextField* kb_widget;
 }
 
 - (BOOL)prefersStatusBarHidden {
+    // prefersStatusBarHidden - iOS 7.0
     return fullscreen;
 }
 
 - (UIRectEdge)preferredScreenEdgesDeferringSystemGestures {
+    // preferredScreenEdgesDeferringSystemGestures - iOS 11.0
     // recent iOS versions have a 'bottom home bar', which when swiped up,
     //  switches out of ClassiCube and to the app list menu
     // overriding this forces the user to swipe up twice, which should
@@ -216,37 +235,43 @@ static UITextField* kb_widget;
 }
 
 - (void)applicationWillResignActive:(UIApplication *)application {
+    // applicationWillResignActive - iOS 2.0
     // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
     // Use this method to pause ongoing tasks, disable timers, and invalidate graphics rendering callbacks. Games should use this method to pause the game.
     Platform_LogConst("INACTIVE");
-    WindowInfo.Focused = false;
+    Window_Main.Focused = false;
     Event_RaiseVoid(&WindowEvents.FocusChanged);
 }
 
 - (void)applicationDidEnterBackground:(UIApplication *)application {
+    // applicationDidEnterBackground - iOS 4.0
     // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
     // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
     Platform_LogConst("BACKGROUND");
 }
 
 - (void)applicationWillEnterForeground:(UIApplication *)application {
+    // applicationWillEnterForeground - iOS 4.0
     // Called as part of the transition from the background to the active state; here you can undo many of the changes made on entering the background.
     Platform_LogConst("FOREGROUND");
 }
 
 - (void)applicationDidBecomeActive:(UIApplication *)application {
+    // applicationDidBecomeActive - iOS 2.0
     // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
     Platform_LogConst("ACTIVE");
-    WindowInfo.Focused = true;
+    Window_Main.Focused = true;
     Event_RaiseVoid(&WindowEvents.FocusChanged);
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application {
+    // applicationWillTerminate - iOS 2.0
     // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     // TODO implement somehow, prob need a variable in Program.c
 }
 
 - (UIInterfaceOrientationMask)application:(UIApplication *)application supportedInterfaceOrientationsForWindow:(UIWindow *)window {
+    // supportedInterfaceOrientationsForWindow - iOS 6.0
     return SupportedOrientations();
 }
 @end
@@ -266,6 +291,7 @@ void Clipboard_SetText(const cc_string* value) { }
  *------------------------------------------------------Common helpers--------------------------------------------------------*
  *#########################################################################################################################*/
 static UIColor* ToUIColor(BitmapCol color, float A) {
+    // colorWithRed:green:blue:alpha - iOS 2.0
     float R = BitmapCol_R(color) / 255.0f;
     float G = BitmapCol_G(color) / 255.0f;
     float B = BitmapCol_B(color) / 255.0f;
@@ -279,6 +305,7 @@ static NSString* ToNSString(const cc_string* text) {
 }
 
 static NSMutableAttributedString* ToAttributedString(const cc_string* text) {
+    // NSMutableAttributedString - iOS 3.2
     cc_string left = *text, part;
     char colorCode = 'f';
     NSMutableAttributedString* str = [[NSMutableAttributedString alloc] init];
@@ -289,8 +316,8 @@ static NSMutableAttributedString* ToAttributedString(const cc_string* text) {
         NSString* bit   = ToNSString(&part);
         NSDictionary* attrs =
         @{
-          //NSFontAttributeName : font,
-          NSForegroundColorAttributeName : ToUIColor(color, 1.0f)
+          //TEXT_ATTRIBUTE_FONT : font,
+          TEXT_ATTRIBUTE_COLOR  : ToUIColor(color, 1.0f)
         };
         NSAttributedString* attr_bit = [[NSAttributedString alloc] initWithString:bit attributes:attrs];
         [str appendAttributedString:attr_bit];
@@ -340,13 +367,13 @@ void Cursor_SetPosition(int x, int y) { }
 void Cursor_DoSetVisible(cc_bool visible) { }
 
 void Window_SetTitle(const cc_string* title) {
-	// TODO: Implement this somehow
+    // TODO: Implement this somehow
 }
 
 void Window_Init(void) {
-    //WindowInfo.SoftKeyboard = SOFT_KEYBOARD_RESIZE;
+    //Window_Main.SoftKeyboard = SOFT_KEYBOARD_RESIZE;
     // keyboard now shifts up
-    WindowInfo.SoftKeyboard = SOFT_KEYBOARD_SHIFT;
+    Window_Main.SoftKeyboard = SOFT_KEYBOARD_SHIFT;
     Input_SetTouchMode(true);
     Input.Sources = INPUT_SOURCE_NORMAL;
     
@@ -354,6 +381,8 @@ void Window_Init(void) {
     DisplayInfo.ScaleX = 1; // TODO dpi scale
     DisplayInfo.ScaleY = 1; // TODO dpi scale
 }
+
+void Window_Free(void) { }
 
 static UIColor* CalcBackgroundColor(void) {
     // default to purple if no themed background color yet
@@ -363,15 +392,16 @@ static UIColor* CalcBackgroundColor(void) {
 }
 
 static CGRect DoCreateWindow(void) {
+    // UIKeyboardWillShowNotification - iOS 2.0
     CGRect bounds = GetViewFrame();
     cc_controller = [CCViewController alloc];
     win_handle    = [[CCWindow alloc] initWithFrame:bounds];
     
     win_handle.rootViewController = cc_controller;
     win_handle.backgroundColor = CalcBackgroundColor();
-    WindowInfo.Exists = true;
-    WindowInfo.Width  = bounds.size.width;
-    WindowInfo.Height = bounds.size.height;
+    Window_Main.Exists = true;
+    Window_Main.Width  = bounds.size.width;
+    Window_Main.Height = bounds.size.height;
     
     NSNotificationCenter* notifications = NSNotificationCenter.defaultCenter;
     [notifications addObserver:cc_controller selector:@selector(keyboardDidShow:) name:UIKeyboardWillShowNotification object:nil];
@@ -384,8 +414,8 @@ void Window_Show(void) {
     [win_handle makeKeyAndVisible];
 }
 
-void Window_Close(void) {
-    WindowInfo.Exists = false;
+void Window_RequestClose(void) {
+    Window_Main.Exists = false;
     Event_RaiseVoid(&WindowEvents.Closing);
 }
 
@@ -396,7 +426,10 @@ void Window_ProcessEvents(double delta) {
         res = CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, TRUE);
     } while (res == kCFRunLoopRunHandledSource);
 }
+
 void ShowDialogCore(const char* title, const char* msg) {
+    // UIAlertController - iOS 8.0
+    // UIAlertAction - iOS 8.0
     Platform_LogConst(title);
     Platform_LogConst(msg);
     NSString* _title = [NSString stringWithCString:title encoding:NSASCIIStringEncoding];
@@ -434,6 +467,7 @@ void ShowDialogCore(const char* title, const char* msg) {
 
 // === UITextFieldDelegate ===
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    // textFieldShouldReturn - iOS 2.0
     Input_SetPressed(CCKEY_ENTER);
     Input_SetReleased(CCKEY_ENTER);
     return YES;
@@ -476,6 +510,7 @@ int Window_GetWindowState(void) {
 }
 
 static void ToggleFullscreen(cc_bool isFullscreen) {
+    // setNeedsStatusBarAppearanceUpdate - iOS 7.0
     fullscreen = isFullscreen;
     [cc_controller setNeedsStatusBarAppearanceUpdate];
     view_handle.frame = GetViewFrame();
@@ -494,6 +529,7 @@ void Window_UpdateRawMouse(void)  { }
 void Window_DisableRawMouse(void) { DefaultDisableRawMouse(); }
 
 void Window_LockLandscapeOrientation(cc_bool lock) {
+    // attemptRotationToDeviceOrientation - iOS 5.0
     // TODO doesn't work properly.. setting 'UIInterfaceOrientationUnknown' apparently
     //  restores orientation, but doesn't actually do that when I tried it
     if (lock) {
@@ -509,8 +545,9 @@ void Window_LockLandscapeOrientation(cc_bool lock) {
 }
 
 cc_result Window_OpenFileDialog(const struct OpenFileDialogArgs* args) {
+    // UIDocumentPickerViewController - iOS 8.0
     // see the custom UTITypes declared in Info.plist 
-    NSDictionary<NSString*, NSString*>* fileExt_map =
+    NSDictionary* fileExt_map =
     @{
       @".cw"  : @"com.classicube.client.ios-cw",
       @".dat" : @"com.classicube.client.ios-dat",
@@ -518,10 +555,11 @@ cc_result Window_OpenFileDialog(const struct OpenFileDialogArgs* args) {
       @".fcm" : @"com.classicube.client.ios-fcm",
       @".zip" : @"public.zip-archive"
     };
-    NSMutableArray<NSString*>* types = [NSMutableArray array];
+    NSMutableArray* types = [NSMutableArray array];
     const char* const* filters = args->filters;
 
-    for (int i = 0; filters[i]; i++) {
+    for (int i = 0; filters[i]; i++) 
+    {
         NSString* fileExt = [NSString stringWithUTF8String:filters[i]];
         NSString* utType  = [fileExt_map objectForKey:fileExt];
         if (utType) [types addObject:utType];
@@ -540,6 +578,7 @@ cc_result Window_OpenFileDialog(const struct OpenFileDialogArgs* args) {
 
 cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
     if (!args->defaultName.length) return SFD_ERR_NEED_DEFAULT_NAME;
+    // UIDocumentPickerViewController - iOS 8.0
     
     // save the item to a temp file, which is then (usually) later deleted by picker callbacks
     cc_string tmpDir = String_FromConst("Exported");
@@ -595,6 +634,7 @@ static void GLContext_OnLayout(void);
 @end
 
 void Window_Create3D(int width, int height) {
+    // CAEAGLLayer - iOS 2.0
     CGRect bounds = DoCreateWindow();
     view_handle   = [[CCGLView alloc] initWithFrame:bounds];
     view_handle.multipleTouchEnabled = true;
@@ -630,15 +670,15 @@ static void CreateFramebuffer(void) {
     
     glGenRenderbuffers(1, &depth_renderbuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, depth_renderbuffer);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24_OES, WindowInfo.Width, WindowInfo.Height);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24_OES, Window_Main.Width, Window_Main.Height);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_renderbuffer);
     
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE)
         Logger_Abort2(status, "Failed to create renderbuffer");
     
-    fb_width  = WindowInfo.Width;
-    fb_height = WindowInfo.Height;
+    fb_width  = Window_Main.Width;
+    fb_height = Window_Main.Height;
 }
 
 void GLContext_Create(void) {
@@ -658,15 +698,15 @@ static void GLContext_OnLayout(void) {
     CAEAGLLayer* layer = (CAEAGLLayer*)view_handle.layer;
     
     // only resize buffers when absolutely have to
-    if (fb_width == WindowInfo.Width && fb_height == WindowInfo.Height) return;
-    fb_width  = WindowInfo.Width;
-    fb_height = WindowInfo.Height;
+    if (fb_width == Window_Main.Width && fb_height == Window_Main.Height) return;
+    fb_width  = Window_Main.Width;
+    fb_height = Window_Main.Height;
     
     glBindRenderbuffer(GL_RENDERBUFFER, color_renderbuffer);
     [ctx_handle renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer];
     
     glBindRenderbuffer(GL_RENDERBUFFER, depth_renderbuffer);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24_OES, WindowInfo.Width, WindowInfo.Height);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24_OES, Window_Main.Width, Window_Main.Height);
 }
 
 void GLContext_Free(void) {
@@ -723,6 +763,7 @@ static char gameArgs[GAME_MAX_CMDARGS][STRING_SIZE];
 static int gameNumArgs;
 
 cc_result Process_StartOpen(const cc_string* args) {
+    // openURL - iOS 2.0 (deprecated)
     NSString* str = ToNSString(args);
     NSURL* url    = [[NSURL alloc] initWithString:str];
     [UIApplication.sharedApplication openURL:url];
@@ -752,6 +793,7 @@ int Platform_GetCommandLineArgs(int argc, STRING_REF char** argv, cc_string* arg
 }
 
 cc_result Platform_SetDefaultCurrentDirectory(int argc, char **argv) {
+    // NSSearchPathForDirectoriesInDomains - iOS 2.0
     // https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html
     NSArray* array = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     if (array.count <= 0) return ERR_NOT_SUPPORTED;
@@ -764,6 +806,7 @@ cc_result Platform_SetDefaultCurrentDirectory(int argc, char **argv) {
 }
 
 void Platform_ShareScreenshot(const cc_string* filename) {
+    // UIActivityViewController - iOS 6.0
     cc_string path; char pathBuffer[FILENAME_SIZE];
     String_InitArray(path, pathBuffer);
     String_Format1(&path, "screenshots/%s", filename);
@@ -779,6 +822,7 @@ void Platform_ShareScreenshot(const cc_string* filename) {
 }
 
 void GetDeviceUUID(cc_string* str) {
+    // identifierForVendor - iOS 6.0
     UIDevice* device = UIDevice.currentDevice;
     NSString* string = [[device identifierForVendor] UUIDString];
     
@@ -788,9 +832,10 @@ void GetDeviceUUID(cc_string* str) {
 }
 
 void Directory_GetCachePath(cc_string* path) {
+    // NSSearchPathForDirectoriesInDomains - iOS 2.0
     NSArray* array = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
     if (array.count <= 0) return;
-	
+    
     // try to use iOS app cache folder if possible
     // https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html
     NSString* str    = [array objectAtIndex:0];
@@ -805,7 +850,7 @@ void Directory_GetCachePath(cc_string* path) {
  *#########################################################################################################################*/
 #ifndef CC_BUILD_FREETYPE
 void interop_GetFontNames(struct StringsBuffer* buffer) {
-    NSArray<NSString*>* families = UIFont.familyNames;
+    NSArray* families = UIFont.familyNames;
     NSLog(@"Families: %@", families);
     char tmpBuffer[NATIVE_STR_LEN];
     cc_string tmp = String_FromArray(tmpBuffer);
@@ -830,7 +875,7 @@ void interop_GetFontNames(struct StringsBuffer* buffer) {
 }
  
 static CTFontRef TryCreateBoldFont(NSString* name, CGFloat uiSize) {
-    NSArray<NSString*>* fontNames = [UIFont fontNamesForFamilyName:name];
+    NSArray* fontNames = [UIFont fontNamesForFamilyName:name];
     for (NSString* fontName in fontNames)
     {
         if ([fontName rangeOfString:@"Bold" options:NSCaseInsensitiveSearch].location != NSNotFound)
@@ -914,9 +959,9 @@ void interop_SysTextDraw(struct DrawTextArgs* args, struct Context2D* ctx, int x
         NSString* bit = ToNSString(&part);
         NSDictionary* attrs =
         @{
-          NSFontAttributeName : font,
-          NSForegroundColorAttributeName : ToUIColor(color, 1.0f)
-          };
+          TEXT_ATTRIBUTE_FONT  : font,
+          TEXT_ATTRIBUTE_COLOR : ToUIColor(color, 1.0f)
+        };
         
         if (args->font->flags & FONT_FLAGS_UNDERLINE) {
             NSNumber* value = [NSNumber numberWithInt:kCTUnderlineStyleSingle];
@@ -945,7 +990,7 @@ void interop_SysTextDraw(struct DrawTextArgs* args, struct Context2D* ctx, int x
 }
 
 static UIFont* TryCreateBoldFont(NSString* name, CGFloat uiSize) {
-    NSArray<NSString*>* fontNames = [UIFont fontNamesForFamilyName:name];
+    NSArray* fontNames = [UIFont fontNamesForFamilyName:name];
     for (NSString* fontName in fontNames)
     {
         if ([fontName rangeOfString:@"Bold" options:NSCaseInsensitiveSearch].location != NSNotFound)
@@ -997,8 +1042,8 @@ static NSMutableAttributedString* GetAttributedString(struct DrawTextArgs* args,
         NSRange range = NSMakeRange(str.length, bit.length);
         [str.mutableString appendString:bit];
         
-        [str addAttribute:NSFontAttributeName            value:font                   range:range];
-        [str addAttribute:NSForegroundColorAttributeName value:ToUIColor(color, 1.0f) range:range];
+        [str addAttribute:TEXT_ATTRIBUTE_FONT  value:font                   range:range];
+        [str addAttribute:TEXT_ATTRIBUTE_COLOR value:ToUIColor(color, 1.0f) range:range];
         
         if (args->font->flags & FONT_FLAGS_UNDERLINE) {
             NSNumber* style = [NSNumber numberWithInt:kCTUnderlineStyleSingle];
@@ -1055,7 +1100,7 @@ void interop_SysTextDraw(struct DrawTextArgs* args, struct Context2D* ctx, int x
         NSString* bit = ToNSString(&part);
         NSDictionary* attrs =
         @{
-          NSFontAttributeName : font,
+          TEXT_ATTRIBUTE_FONT : font,
           NSForegroundColorAttributeName : ToUIColor(color, 1.0f)
           };
         NSAttributedString* attr_bit = [[NSAttributedString alloc] initWithString:bit attributes:attrs];
@@ -1101,7 +1146,7 @@ static NSString* cellID = @"CC_Cell";
 
 - (void)handleButtonPress:(id)sender {
     struct LWidget* w = FindWidgetForView(sender);
-    if (w == NULL) return;
+    if (!w) return;
         
     struct LButton* btn = (struct LButton*)w;
     btn->OnClick(btn);
@@ -1109,7 +1154,7 @@ static NSString* cellID = @"CC_Cell";
 
 - (void)handleTextChanged:(id)sender {
     struct LWidget* w = FindWidgetForView(sender);
-    if (w == NULL) return;
+    if (!w) return;
     
     UITextField* src   = (UITextField*)sender;
     const char* str    = src.text.UTF8String;
@@ -1124,7 +1169,7 @@ static NSString* cellID = @"CC_Cell";
     UISwitch* swt     = (UISwitch*)sender;
     UIView* parent    = swt.superview;
     struct LWidget* w = FindWidgetForView(parent);
-    if (w == NULL) return;
+    if (!w) return;
 
     struct LCheckbox* cb = (struct LCheckbox*)w;
     cb->value = [swt isOn];
@@ -1133,7 +1178,8 @@ static NSString* cellID = @"CC_Cell";
 }
 
 // === UITableViewDataSource ===
-- (nonnull UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    // cellForRowAtIndexPath - iOS 2.0
     //UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:cellID forIndexPath:indexPath];
     UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:cellID];
     if (cell == nil) {
@@ -1144,23 +1190,26 @@ static NSString* cellID = @"CC_Cell";
     return cell;
 }
 
-- (NSInteger)tableView:(nonnull UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    // numberOfRowsInSection - iOS 2.0
     struct LTable* w = (struct LTable*)FindWidgetForView(tableView);
     return w ? w->rowsCount : 0;
 }
 
 // === UITableViewDelegate ===
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    // didSelectRowAtIndexPath - iOS 2.0
     int row = (int)indexPath.row;
     struct ServerInfo* server = LTable_Get(row);
     LTable_UpdateCellColor([tableView cellForRowAtIndexPath:indexPath], server, row, true);
     
     struct LTable* w = (struct LTable*)FindWidgetForView(tableView);
-    if (w == NULL) return;
+    if (!w) return;
     LTable_RowClick(w, row);
 }
 
 - (void)tableView:(UITableView *)tableView didDeselectRowAtIndexPath:(NSIndexPath *)indexPath {
+    // didDeselectRowAtIndexPath - iOS 2.0
     int row = (int)indexPath.row;
     struct ServerInfo* server = LTable_Get(row);
     LTable_UpdateCellColor([tableView cellForRowAtIndexPath:indexPath], server, row, false);
@@ -1168,8 +1217,9 @@ static NSString* cellID = @"CC_Cell";
 
 // === UITextFieldDelegate ===
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    // textFieldShouldReturn - iOS 2.0
     struct LWidget* w   = FindWidgetForView(textField);
-    if (w == NULL) return YES;
+    if (!w) return YES;
     struct LWidget* sel = Launcher_Active->onEnterWidget;
     
     if (sel && !w->skipsEnter) {
@@ -1181,6 +1231,7 @@ static NSString* cellID = @"CC_Cell";
 }
 
 - (void)textFieldDidBeginEditing:(UITextField *)textField {
+    // textFieldDidBeginEditing - iOS 2.0
     kb_widget = textField;
 }
 
@@ -1199,6 +1250,7 @@ void LBackend_Free(void) { }
 void LBackend_UpdateTitleFont(void) { }
 
 static void DrawText(NSAttributedString* str, struct Context2D* ctx, int x, int y) {
+    // CTLineCreateWithAttributedString - iOS 3.2
     CTLineRef line = CTLineCreateWithAttributedString((CFAttributedStringRef)str);
     CGRect bounds  = CTLineGetImageBounds(line, win_ctx);
     int centreX    = (int)(ctx->width / 2.0f - bounds.size.width / 2.0f);
@@ -1215,21 +1267,23 @@ void LBackend_DrawTitle(struct Context2D* ctx, const char* title) {
         // bitmapped fonts don't need to be freed
         return;
     }
-    UIFont* font   = [UIFont systemFontOfSize:42 weight:0.2f]; //UIFontWeightSemibold
+    
+    // systemFontOfSize: - iOS 2.0
+    UIFont* font   = [UIFont systemFontOfSize:42];
     NSString* text = [NSString stringWithCString:title encoding:NSASCIIStringEncoding];
         
     NSDictionary* attrs_bg =
     @{
-      NSFontAttributeName : font,
-      NSForegroundColorAttributeName : UIColor.blackColor
+      TEXT_ATTRIBUTE_FONT  : font,
+      TEXT_ATTRIBUTE_COLOR : UIColor.blackColor
     };
     NSAttributedString* str_bg = [[NSAttributedString alloc] initWithString:text attributes:attrs_bg];
     DrawText(str_bg, ctx, 4, 42);
         
     NSDictionary* attrs_fg =
     @{
-      NSFontAttributeName : font,
-      NSForegroundColorAttributeName : UIColor.whiteColor
+      TEXT_ATTRIBUTE_FONT  : font,
+      TEXT_ATTRIBUTE_COLOR : UIColor.whiteColor
     };
     NSAttributedString* str_fg = [[NSAttributedString alloc] initWithString:text attributes:attrs_fg];
     DrawText(str_fg, ctx, 0, 38);
@@ -1241,8 +1295,8 @@ void LBackend_FreeFramebuffer(void) { }
 void LBackend_Redraw(void) {
     struct Context2D ctx;
     struct Bitmap bmp;
-    bmp.width  = max(WindowInfo.Width,  1);
-    bmp.height = max(WindowInfo.Height, 1);
+    bmp.width  = max(Window_Main.Width,  1);
+    bmp.height = max(Window_Main.Height, 1);
     bmp.scan0  = (BitmapCol*)Mem_Alloc(bmp.width * bmp.height, 4, "window pixels");
     
     Context2D_Wrap(&ctx, &bmp);
@@ -1586,10 +1640,10 @@ static void LBackend_LayoutDimensions(struct LWidget* w, CGRect* r) {
         switch (l->type)
         {
             case LLAYOUT_WIDTH:
-                r->size.width  = WindowInfo.Width  - (int)r->origin.x - Display_ScaleX(l->offset);
+                r->size.width  = Window_Main.Width  - (int)r->origin.x - Display_ScaleX(l->offset);
                 break;
             case LLAYOUT_HEIGHT:
-                r->size.height = WindowInfo.Height - (int)r->origin.y - Display_ScaleY(l->offset);
+                r->size.height = Window_Main.Height - (int)r->origin.y - Display_ScaleY(l->offset);
                 break;
         }
         l++;
@@ -1603,8 +1657,8 @@ void LBackend_LayoutWidget(struct LWidget* w) {
     int width    = (int)r.size.width;
     int height   = (int)r.size.height;
     
-    r.origin.x = Gui_CalcPos(l[0].type & 0xFF, Display_ScaleX(l[0].offset), width,  WindowInfo.Width);
-    r.origin.y = Gui_CalcPos(l[1].type & 0xFF, Display_ScaleY(l[1].offset), height, WindowInfo.Height);
+    r.origin.x = Gui_CalcPos(l[0].type & 0xFF, Display_ScaleX(l[0].offset), width,  Window_Main.Width);
+    r.origin.y = Gui_CalcPos(l[1].type & 0xFF, Display_ScaleY(l[1].offset), height, Window_Main.Height);
     
     // e.g. Table widget needs adjusts width/height based on window
     if (l[1].type & LLAYOUT_EXTRA)
@@ -1655,10 +1709,9 @@ void LBackend_CloseScreen(struct LScreen* s) {
     }
     
     // remove all widgets from previous screen
-    NSArray<UIView*>* elems = [view_handle subviews];
+    NSArray* elems = [view_handle subviews];
     for (UIView* view in elems)
     {
         [view removeFromSuperview];
     }
 }
-#endif

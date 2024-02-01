@@ -22,15 +22,12 @@ static void* xfb;
 static GXRModeObj* rmode;
 void* Window_XFB;
 struct _DisplayData DisplayInfo;
-struct _WinData WindowInfo;
-// no DPI scaling on Wii/GameCube
-int Display_ScaleX(int x) { return x; }
-int Display_ScaleY(int y) { return y; }
+struct _WindowData WindowInfo;
 
 
 static void OnPowerOff(void) {
-	WindowInfo.Exists = false;
-	Window_Close();
+	Window_Main.Exists = false;
+	Window_RequestClose();
 }
 static void InitVideo(void) {
 	// Initialise the video system
@@ -70,12 +67,15 @@ void Window_Init(void) {
 	DisplayInfo.ScaleX = 1;
 	DisplayInfo.ScaleY = 1;
 	
-	WindowInfo.Width   = rmode->fbWidth;
-	WindowInfo.Height  = rmode->xfbHeight;
-	WindowInfo.Focused = true;
-	WindowInfo.Exists  = true;
+	Window_Main.Width   = rmode->fbWidth;
+	Window_Main.Height  = rmode->xfbHeight;
+	Window_Main.Focused = true;
+	Window_Main.Exists  = true;
 
 	Input.Sources = INPUT_SOURCE_GAMEPAD;
+	DisplayInfo.ContentOffsetX = 10;
+	DisplayInfo.ContentOffsetY = 10;
+
 	#if defined HW_RVL
 	WPAD_Init();
 	WPAD_SetDataFormat(0, WPAD_FMT_BTNS_ACC_IR);
@@ -83,6 +83,8 @@ void Window_Init(void) {
 	#endif
 	PAD_Init();
 }
+
+void Window_Free(void) { }
 
 void Window_Create2D(int width, int height) {
 	needsFBUpdate = true;
@@ -93,7 +95,7 @@ void Window_Create3D(int width, int height) {
 	launcherMode = false; 
 }
 
-void Window_Close(void) {
+void Window_RequestClose(void) {
 	Event_RaiseVoid(&WindowEvents.Closing);
 }
 
@@ -482,13 +484,13 @@ void Window_DrawFramebuffer(Rect2D r) {
 	}
 	
 	VIDEO_WaitVSync();
-	r.X &= ~0x01; // round down to nearest even horizontal index
+	r.x &= ~0x01; // round down to nearest even horizontal index
 	
 	// TODO XFB is raw yuv, but is absolutely a pain to work with..
-	for (int y = r.Y; y < r.Y + r.Height; y++) 
+	for (int y = r.y; y < r.y + r.Height; y++) 
 	{
-		cc_uint32* src = fb_bmp.scan0 + y * fb_bmp.width   + r.X;
-		u16* dst       = (u16*)xfb    + y * rmode->fbWidth + r.X;
+		cc_uint32* src = fb_bmp.scan0 + y * fb_bmp.width   + r.x;
+		u16* dst       = (u16*)xfb    + y * rmode->fbWidth + r.x;
 		
 		for (int x = 0; x < r.Width / 2; x++) {
 			cc_uint32 rgb0 = src[(x<<1) + 0];

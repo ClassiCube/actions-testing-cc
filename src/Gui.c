@@ -27,8 +27,8 @@ static cc_uint8 priorities[GUI_MAX_SCREENS];
 *----------------------------------------------------------Gui------------------------------------------------------------*
 *#########################################################################################################################*/
 static CC_NOINLINE int GetWindowScale(void) {
-	float widthScale  = WindowInfo.Width  / 640.0f;
-	float heightScale = WindowInfo.Height / 480.0f;
+	float widthScale  = Window_Main.Width  / 640.0f;
+	float heightScale = Window_Main.Height / 480.0f;
 
 	/* Use larger UI scaling on mobile */
 	/* TODO move this DPI scaling elsewhere.,. */
@@ -346,7 +346,7 @@ void TextAtlas_Add(struct TextAtlas* atlas, int charI, struct VertexTextured** v
 	struct Texture part = atlas->tex;
 	int width = atlas->widths[charI];
 
-	part.X  = atlas->curX; part.Width = width;
+	part.x  = atlas->curX; part.Width = width;
 	part.uv.U1 = atlas->offsets[charI] * atlas->uScale;
 	part.uv.U2 = part.uv.U1 + width    * atlas->uScale;
 
@@ -383,8 +383,8 @@ void Widget_SetLocation(void* widget, cc_uint8 horAnchor, cc_uint8 verAnchor, in
 
 void Widget_CalcPosition(void* widget) {
 	struct Widget* w = (struct Widget*)widget;
-	w->x = Gui_CalcPos(w->horAnchor, w->xOffset, w->width , WindowInfo.Width );
-	w->y = Gui_CalcPos(w->verAnchor, w->yOffset, w->height, WindowInfo.Height);
+	w->x = Gui_CalcPos(w->horAnchor, w->xOffset, w->width , Window_Main.Width );
+	w->y = Gui_CalcPos(w->verAnchor, w->yOffset, w->height, Window_Main.Height);
 }
 
 void Widget_Reset(void* widget) {
@@ -435,7 +435,8 @@ void Screen_Render2Widgets(void* screen, double delta) {
 
 void Screen_UpdateVb(void* screen) {
 	struct Screen* s = (struct Screen*)screen;
-	Gfx_RecreateDynamicVb(&s->vb, VERTEX_FORMAT_TEXTURED, s->maxVertices);
+	Gfx_DeleteDynamicVb(&s->vb);
+	s->vb = Gfx_CreateDynamicVb(VERTEX_FORMAT_TEXTURED, s->maxVertices);
 }
 
 struct VertexTextured* Screen_LockVb(void* screen) {
@@ -478,6 +479,20 @@ int Screen_Index(void* screen, void* widget) {
 	}
 	return -1;
 }
+
+int Screen_CalcDefaultMaxVertices(void* screen) {
+	struct Screen* s = (struct Screen*)screen;
+	struct Widget** widgets = s->widgets;
+	int i, count = 0;
+
+	for (i = 0; i < s->numWidgets; i++)
+	{
+		if (!widgets[i]) continue;
+		count += widgets[i]->VTABLE->GetMaxVertices(widgets[i]);
+	}
+	return count;
+}
+
 
 void Screen_BuildMesh(void* screen) {
 	struct Screen* s = (struct Screen*)screen;
@@ -531,22 +546,25 @@ void Screen_PointerUp(void* s, int id, int x, int y) { }
 *------------------------------------------------------Gui component------------------------------------------------------*
 *#########################################################################################################################*/
 static void GuiPngProcess(struct Stream* stream, const cc_string* name) {
-	Game_UpdateTexture(&Gui.GuiTex, stream, name, NULL);
+	int heightDivisor = 2; /* only top half of gui png is used */
+	Game_UpdateTexture(&Gui.GuiTex, stream, name, NULL, &heightDivisor);
 }
 static struct TextureEntry gui_entry = { "gui.png", GuiPngProcess };
 
 static void GuiClassicPngProcess(struct Stream* stream, const cc_string* name) {
-	Game_UpdateTexture(&Gui.GuiClassicTex, stream, name, NULL);
+	int heightDivisor = 2; /* only top half of gui png is used */
+	Game_UpdateTexture(&Gui.GuiClassicTex, stream, name, NULL, &heightDivisor);
 }
 static struct TextureEntry guiClassic_entry = { "gui_classic.png", GuiClassicPngProcess };
 
 static void IconsPngProcess(struct Stream* stream, const cc_string* name) {
-	Game_UpdateTexture(&Gui.IconsTex, stream, name, NULL);
+	int heightDivisor = 4; /* only top quarter of icons png is used */
+	Game_UpdateTexture(&Gui.IconsTex, stream, name, NULL, &heightDivisor);
 }
 static struct TextureEntry icons_entry = { "icons.png", IconsPngProcess };
 
 static void TouchPngProcess(struct Stream* stream, const cc_string* name) {
-	Game_UpdateTexture(&Gui.TouchTex, stream, name, NULL);
+	Game_UpdateTexture(&Gui.TouchTex, stream, name, NULL, NULL);
 }
 static struct TextureEntry touch_entry = { "touch.png", TouchPngProcess };
 

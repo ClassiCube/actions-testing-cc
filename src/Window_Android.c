@@ -20,9 +20,9 @@ static jmethodID JAVA_processedSurfaceDestroyed, JAVA_processEvents;
 static jmethodID JAVA_getDpiX, JAVA_getDpiY, JAVA_setupForGame;
 
 static void RefreshWindowBounds(void) {
-	WindowInfo.Width  = ANativeWindow_getWidth(win_handle);
-	WindowInfo.Height = ANativeWindow_getHeight(win_handle);
-	Platform_Log2("SCREEN BOUNDS: %i,%i", &WindowInfo.Width, &WindowInfo.Height);
+	Window_Main.Width  = ANativeWindow_getWidth(win_handle);
+	Window_Main.Height = ANativeWindow_getHeight(win_handle);
+	Platform_Log2("SCREEN BOUNDS: %i,%i", &Window_Main.Width, &Window_Main.Height);
 	Event_RaiseVoid(&WindowEvents.Resized);
 }
 
@@ -149,7 +149,7 @@ static void JNICALL java_processSurfaceCreated(JNIEnv* env, jobject o, jobject s
 	Platform_LogConst("WIN - CREATED");
 	win_handle        = ANativeWindow_fromSurface(env, surface);
 	winCreated        = true;
-	WindowInfo.Handle = win_handle;
+	Window_Main.Handle = win_handle;
 	RefreshWindowBounds();
 	/* TODO: Restore context */
 	Event_RaiseVoid(&WindowEvents.Created);
@@ -160,7 +160,7 @@ static void JNICALL java_processSurfaceDestroyed(JNIEnv* env, jobject o) {
 	if (win_handle) ANativeWindow_release(win_handle);
 
 	win_handle        = NULL;
-	WindowInfo.Handle = NULL;
+	Window_Main.Handle = NULL;
 	/* eglSwapBuffers might return EGL_BAD_SURFACE, EGL_BAD_ALLOC, or some other error */
 	/* Instead the context is lost here in a consistent manner */
 	if (Gfx.Created) Gfx_LoseContext("surface lost");
@@ -198,20 +198,20 @@ static void JNICALL java_onPause(JNIEnv* env, jobject o) {
 static void JNICALL java_onDestroy(JNIEnv* env, jobject o) {
 	Platform_LogConst("APP - ON DESTROY");
 
-	if (WindowInfo.Exists) Window_Close();
+	if (Window_Main.Exists) Window_RequestClose();
 	/* TODO: signal to java code we're done */
 	/* JavaICall_Void(env, JAVA_processedDestroyed", NULL); */
 }
 
 static void JNICALL java_onGotFocus(JNIEnv* env, jobject o) {
 	Platform_LogConst("APP - GOT FOCUS");
-	WindowInfo.Focused = true;
+	Window_Main.Focused = true;
 	Event_RaiseVoid(&WindowEvents.FocusChanged);
 }
 
 static void JNICALL java_onLostFocus(JNIEnv* env, jobject o) {
 	Platform_LogConst("APP - LOST FOCUS");
-	WindowInfo.Focused = false;
+	Window_Main.Focused = false;
 	Event_RaiseVoid(&WindowEvents.FocusChanged);
 	/* TODO: Disable rendering? */
 }
@@ -280,7 +280,7 @@ void Window_Init(void) {
 	JavaRegisterNatives(env, methods);
 	CacheMethodRefs(env);
 
-	WindowInfo.SoftKeyboard = SOFT_KEYBOARD_RESIZE;
+	Window_Main.SoftKeyboard = SOFT_KEYBOARD_RESIZE;
 	Input_SetTouchMode(true);
 	Input.Sources = INPUT_SOURCE_NORMAL;
 
@@ -288,6 +288,8 @@ void Window_Init(void) {
 	DisplayInfo.ScaleX = JavaICall_Float(env, JAVA_getDpiX, NULL);
 	DisplayInfo.ScaleY = JavaICall_Float(env, JAVA_getDpiY, NULL);
 }
+
+void Window_Free(void) { }
 
 static void RemakeWindowSurface(void) {
 	JNIEnv* env;
@@ -310,7 +312,7 @@ static void RemakeWindowSurface(void) {
 }
 
 static void DoCreateWindow(void) {
-	WindowInfo.Exists = true;
+	Window_Main.Exists = true;
 	RemakeWindowSurface();
 	/* always start as fullscreen */
 	Window_EnterFullscreen();
@@ -355,8 +357,8 @@ int Window_IsObscured(void) { return 0; }
 void Window_Show(void) { } /* Window already visible */
 void Window_SetSize(int width, int height) { }
 
-void Window_Close(void) {
-	WindowInfo.Exists = false;
+void Window_RequestClose(void) {
+	Window_Main.Exists = false;
 	Event_RaiseVoid(&WindowEvents.Closing);
 	/* TODO: Do we need to call finish here */
 	/* ANativeActivity_finish(app->activity); */
@@ -466,8 +468,8 @@ void Window_DrawFramebuffer(Rect2D r) {
 
 	/* window not created yet */
 	if (!win_handle) return;
-	b.left = r.X; b.right  = r.X + r.Width;
-	b.top  = r.Y; b.bottom = r.Y + r.Height;
+	b.left = r.x; b.right  = r.x + r.Width;
+	b.top  = r.y; b.bottom = r.y + r.Height;
 
 	/* Platform_Log4("DIRTY: %i,%i - %i,%i", &b.left, &b.top, &b.right, &b.bottom); */
 	res  = ANativeWindow_lock(win_handle, &buffer, &b);

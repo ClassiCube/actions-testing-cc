@@ -17,10 +17,8 @@ static cc_bool launcherMode;
 static Result irrst_result;
 
 struct _DisplayData DisplayInfo;
-struct _WinData WindowInfo;
-// no DPI scaling on 3DS
-int Display_ScaleX(int x) { return x; }
-int Display_ScaleY(int y) { return y; }
+struct _WindowData WindowInfo;
+struct _WindowData Window_Alt;
 
 
 // Note from https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/gfx.h
@@ -42,17 +40,23 @@ void Window_Init(void) {
 	DisplayInfo.Width  = height; // deliberately swapped
 	DisplayInfo.Height = width;  // deliberately swapped
 	DisplayInfo.Depth  = 4; // 32 bit
-	DisplayInfo.ScaleX = 1;
-	DisplayInfo.ScaleY = 1;
+	DisplayInfo.ScaleX = 0.5f;
+	DisplayInfo.ScaleY = 0.5f;
 	
-	WindowInfo.Width   = height; // deliberately swapped
-	WindowInfo.Height  = width;  // deliberately swapped
-	WindowInfo.Focused = true;
-	WindowInfo.Exists  = true;
+	Window_Main.Width   = height; // deliberately swapped
+	Window_Main.Height  = width;  // deliberately swapped
+	Window_Main.Focused = true;
+	Window_Main.Exists  = true;
 
 	Input.Sources = INPUT_SOURCE_GAMEPAD;
 	irrst_result  = irrstInit();
+	
+	gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, &width, &height);
+	Window_Alt.Width  = height; // deliberately swapped
+	Window_Alt.Height = width;  // deliberately swapped
 }
+
+void Window_Free(void) { irrstExit(); }
 
 void Window_Create2D(int width, int height) { launcherMode = true;  }
 void Window_Create3D(int width, int height) { launcherMode = false; }
@@ -69,7 +73,7 @@ int Window_IsObscured(void)            { return 0; }
 void Window_Show(void) { }
 void Window_SetSize(int width, int height) { }
 
-void Window_Close(void) {
+void Window_RequestClose(void) {
 	Event_RaiseVoid(&WindowEvents.Closing);
 }
 
@@ -99,10 +103,10 @@ static void HandleButtons(u32 mods) {
 
 static void ProcessJoystickInput(circlePosition* pos, double delta) {
 	float scale = (delta * 60.0) / 8.0f;
-	
+
 	// May not be exactly 0 on actual hardware
-	if (Math_AbsI(pos->dx) <= 8) pos->dx = 0;
-	if (Math_AbsI(pos->dy) <= 8) pos->dy = 0;
+	if (Math_AbsI(pos->dx) <= 16) pos->dx = 0;
+	if (Math_AbsI(pos->dy) <= 16) pos->dy = 0;
 		
 	Event_RaiseRawMove(&PointerEvents.RawMoved, pos->dx * scale, -pos->dy * scale);
 }
@@ -114,7 +118,7 @@ static void ProcessTouchInput(int mods) {
 	
 	if (touchActive) {
 		// rescale X from [0, bottom_FB_width) to [0, top_FB_width)
-		int x = touch.px * WindowInfo.Width / GSP_SCREEN_HEIGHT_BOTTOM;
+		int x = touch.px * Window_Main.Width / GSP_SCREEN_HEIGHT_BOTTOM;
 	 	int y = touch.py;
 		Pointer_SetPosition(0, x, y);
 	}
@@ -130,8 +134,8 @@ void Window_ProcessEvents(double delta) {
 	/* TODO implement */
 	
 	if (!aptMainLoop()) {
-		Event_RaiseVoid(&WindowEvents.Closing);
-		WindowInfo.Exists = false;
+		Window_Main.Exists = false;
+		Window_RequestClose();
 		return;
 	}
 	
@@ -146,7 +150,6 @@ void Window_ProcessEvents(double delta) {
 		hidCircleRead(&pos);
 		ProcessJoystickInput(&pos, delta);
 	}
-	
 	if (Input.RawMode && irrst_result == 0) {
 		circlePosition pos;
 		irrstScanInput();
@@ -192,8 +195,8 @@ void Window_DrawFramebuffer(Rect2D r) {
 	// DST X = 0 to 240
 	// DST Y = 0 to 400
 
-	for (int y = r.Y; y < r.Y + r.Height; y++)
-		for (int x = r.X; x < r.X + r.Width; x++)
+	for (int y = r.y; y < r.y + r.Height; y++)
+		for (int x = r.x; x < r.x + r.Width; x++)
 	{
 		BitmapCol color = Bitmap_GetPixel(&fb_bmp, x, y);
 		int addr   = (width - 1 - y + x * width) * 3; // TODO -1 or not

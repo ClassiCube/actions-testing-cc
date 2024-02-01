@@ -19,8 +19,14 @@ static int oneX, twoX, fourX;
 static int oneY, twoY, fourY;
 
 void LWidget_CalcOffsets(void) {
-	oneX = Display_ScaleX(1); twoX = oneX * 2; fourX = oneX * 4;
-	oneY = Display_ScaleY(1); twoY = oneY * 2; fourY = oneY * 4;
+	oneX = Display_ScaleX(1);
+	oneY = Display_ScaleY(1);
+
+	if (oneX < 1) { oneX = 1; }
+	if (oneY < 1) { oneY = 1; }
+
+	twoX = oneX * 2; fourX = oneX * 4;
+	twoY = oneY * 2; fourY = oneY * 4;
 
 	flagXOffset  = Display_ScaleX(2);
 	flagYOffset  = Display_ScaleY(6);
@@ -113,13 +119,17 @@ static const struct LWidgetVTABLE lbutton_VTABLE = {
 	LButton_Hover,    LButton_Unhover,   /* Hover  */
 	LButton_OnSelect, LButton_OnUnselect /* Select */
 };
-void LButton_Init(struct LButton* w, int width, int height, const char* text, const struct LLayout* layouts) {
+void LButton_Add(void* screen, struct LButton* w, int width, int height, const char* text, 
+					LWidgetFunc onClick, const struct LLayout* layouts) {
 	w->VTABLE  = &lbutton_VTABLE;
 	w->type    = LWIDGET_BUTTON;
+	w->OnClick = onClick;
 	w->layouts = layouts;
 	w->autoSelectable = true;
+
 	LBackend_ButtonInit(w, width, height);
 	LButton_SetConst(w, text);
+	LScreen_AddWidget(screen, w);
 }
 
 void LButton_SetConst(struct LButton* w, const char* text) {
@@ -142,14 +152,17 @@ static const struct LWidgetVTABLE lcheckbox_VTABLE = {
 	NULL, NULL, /* Hover  */
 	NULL, NULL  /* Select */
 };
-void LCheckbox_Init(struct LCheckbox* w, const char* text, const struct LLayout* layouts) {
+void LCheckbox_Add(void* screen, struct LCheckbox* w, const char* text, 
+					LCheckboxChanged onChanged, const struct LLayout* layouts) {
 	w->VTABLE  = &lcheckbox_VTABLE;
 	w->type    = LWIDGET_CHECKBOX;
 	w->layouts = layouts;
 	w->autoSelectable = true;
+	w->ValueChanged   = onChanged;
 
 	w->text = String_FromReadonly(text);
 	LBackend_CheckboxInit(w);
+	LScreen_AddWidget(screen, w);
 }
 
 void LCheckbox_Set(struct LCheckbox* w, cc_bool value) {
@@ -314,17 +327,22 @@ static const struct LWidgetVTABLE linput_VTABLE = {
 	LInput_Select, LInput_Unselect, /* Select */
 	NULL, LInput_TextChanged        /* TextChanged */
 };
-void LInput_Init(struct LInput* w, int width, const char* hintText, const struct LLayout* layouts) {
+void LInput_Add(void* screen, struct LInput* w, int width, const char* hintText, 
+				const struct LLayout* layouts) {
 	w->VTABLE  = &linput_VTABLE;
 	w->type    = LWIDGET_INPUT;
 	w->autoSelectable = true;
 	w->opaque  = true;
 	w->layouts = layouts;
-	String_InitArray(w->text, w->_textBuffer);
+
+	if (!w->text.buffer) {
+		String_InitArray(w->text, w->_textBuffer);
+	}
 	
 	w->hintText = hintText;
 	w->caretPos = -1;
 	LBackend_InputInit(w, width);
+	LScreen_AddWidget(screen, w);
 }
 
 void LInput_SetText(struct LInput* w, const cc_string* text) {
@@ -369,7 +387,8 @@ static const struct LWidgetVTABLE llabel_VTABLE = {
 	NULL, NULL, /* Hover  */
 	NULL, NULL  /* Select */
 };
-void LLabel_Init(struct LLabel* w, const char* text, const struct LLayout* layouts) {
+void LLabel_Add(void* screen, struct LLabel* w, const char* text, 
+				const struct LLayout* layouts) {
 	w->VTABLE  = &llabel_VTABLE;
 	w->type    = LWIDGET_LABEL;
 	w->layouts = layouts;
@@ -377,6 +396,7 @@ void LLabel_Init(struct LLabel* w, const char* text, const struct LLayout* layou
 	String_InitArray(w->text, w->_textBuffer);
 	LBackend_LabelInit(w);
 	LLabel_SetConst(w, text);
+	LScreen_AddWidget(screen, w);
 }
 
 void LLabel_SetText(struct LLabel* w, const cc_string* text) {
@@ -405,11 +425,14 @@ static const struct LWidgetVTABLE lline_VTABLE = {
 	NULL, NULL, /* Hover  */
 	NULL, NULL  /* Select */
 };
-void LLine_Init(struct LLine* w, int width, const struct LLayout* layouts) {
+void LLine_Add(void* screen, struct LLine* w, int width, 
+				const struct LLayout* layouts) {
 	w->VTABLE  = &lline_VTABLE;
 	w->type    = LWIDGET_LINE;
 	w->layouts = layouts;
+
 	LBackend_LineInit(w, width);
+	LScreen_AddWidget(screen, w);
 }
 
 #define CLASSIC_LINE_COLOR BitmapColor_RGB(128, 128, 128)
@@ -432,13 +455,16 @@ static const struct LWidgetVTABLE lslider_VTABLE = {
 	NULL, NULL, /* Hover  */
 	NULL, NULL  /* Select */
 };
-void LSlider_Init(struct LSlider* w, int width, int height, BitmapCol color, const struct LLayout* layouts) {
+void LSlider_Add(void* screen, struct LSlider* w, int width, int height, BitmapCol color, 
+				const struct LLayout* layouts) {
 	w->VTABLE  = &lslider_VTABLE;
 	w->type    = LWIDGET_SLIDER;
 	w->color   = color;
 	w->opaque  = true;
 	w->layouts = layouts;
+
 	LBackend_SliderInit(w, width, height);
+	LScreen_AddWidget(screen, w);
 }
 
 void LSlider_SetProgress(struct LSlider* w, int progress) {
@@ -621,7 +647,8 @@ static const struct LWidgetVTABLE ltable_VTABLE = {
 	LTable_MouseDown, LTable_MouseUp, /* Select */
 	LTable_MouseWheel,      /* Wheel */
 };
-void LTable_Init(struct LTable* w, const struct LLayout* layouts) {
+void LTable_Add(void* screen, struct LTable* w, 
+				const struct LLayout* layouts) {
 	int i;
 	w->VTABLE     = &ltable_VTABLE;
 	w->type       = LWIDGET_TABLE;
@@ -635,6 +662,7 @@ void LTable_Init(struct LTable* w, const struct LLayout* layouts) {
 		w->columns[i].width = Display_ScaleX(w->columns[i].width);
 	}
 	LBackend_TableInit(w);
+	LScreen_AddWidget(screen, w);
 }
 
 void LTable_Reset(struct LTable* w) {

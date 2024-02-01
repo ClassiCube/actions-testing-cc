@@ -38,7 +38,7 @@ static void CloseActiveScreen(void) {
 	Window_CloseKeyboard();
 	if (!Launcher_Active) return;
 	
-	Launcher_Active->Free(Launcher_Active);
+	Launcher_Active->Deactivated(Launcher_Active);
 	LBackend_CloseScreen(Launcher_Active);
 	Launcher_Active = NULL;
 }
@@ -46,10 +46,12 @@ static void CloseActiveScreen(void) {
 void Launcher_SetScreen(struct LScreen* screen) {
 	CloseActiveScreen();
 	Launcher_Active = screen;
-	if (!screen->numWidgets) screen->Init(screen);
 
-	screen->Show(screen);
+	screen->Activated(screen);
 	screen->Layout(screen);
+
+	if (!screen->everShown) screen->LoadState(screen);
+	screen->everShown = true;
 
 	LBackend_SetScreen(screen);
 	LBackend_Redraw();
@@ -88,11 +90,12 @@ cc_bool Launcher_StartGame(const cc_string* user, const cc_string* mppass, const
 	/* Save resume info */
 	if (server->length) {
 		Options_PauseSaving();
-		Options_Set(ROPT_SERVER, server);
-		Options_Set(ROPT_USER,   user);
-		Options_Set(ROPT_IP,     ip);
-		Options_Set(ROPT_PORT,   port);
-		Options_SetSecure(ROPT_MPPASS, mppass);
+			Options_Set(ROPT_SERVER, server);
+			Options_Set(ROPT_USER,   user);
+			Options_Set(ROPT_IP,     ip);
+			Options_Set(ROPT_PORT,   port);
+			Options_SetSecure(ROPT_MPPASS, mppass);
+		Options_ResumeSaving();
 	}
 	/* Save options BEFORE starting new game process */
 	/* Otherwise can get 'file already in use' errors on startup */
@@ -253,9 +256,7 @@ void Launcher_Run(void) {
 	Http_Component.Init();
 	CheckUpdateTask_Run();
 
-#ifdef CC_BUILD_FLATPAK
-	MainScreen_SetActive();
-#else
+#ifdef CC_BUILD_RESOURCES
 	Resources_CheckExistence();
 
 	if (Resources_Count) {
@@ -263,11 +264,13 @@ void Launcher_Run(void) {
 	} else {
 		MainScreen_SetActive();
 	}
+#else
+	MainScreen_SetActive();
 #endif
 
 	for (;;) {
 		Window_ProcessEvents(10 / 1000.0);
-		if (!WindowInfo.Exists || Launcher_ShouldExit) break;
+		if (!Window_Main.Exists || Launcher_ShouldExit) break;
 
 		Launcher_Active->Tick(Launcher_Active);
 		LBackend_Tick();
@@ -290,7 +293,7 @@ void Launcher_Run(void) {
 		if (res) Logger_SysWarn(res, action);
 	}
 
-	if (WindowInfo.Exists) Window_Close();
+	if (Window_Main.Exists) Window_RequestClose();
 #endif
 }
 
@@ -326,9 +329,7 @@ const struct LauncherTheme Launcher_NordicTheme = {
 
 CC_NOINLINE static void ParseColor(const char* key, BitmapCol* color) {
 	cc_uint8 rgb[3];
-	cc_string value;
-	if (!Options_UNSAFE_Get(key, &value))    return;
-	if (!PackedCol_TryParseHex(&value, rgb)) return;
+	if (!Options_GetColor(key, rgb)) return;
 
 	*color = BitmapColor_RGB(rgb[0], rgb[1], rgb[2]);
 }
@@ -359,12 +360,14 @@ CC_NOINLINE static void SaveColor(const char* key, BitmapCol color) {
 }
 
 void Launcher_SaveTheme(void) {
-	SaveColor("launcher-back-col",                   Launcher_Theme.BackgroundColor);
-	SaveColor("launcher-btn-border-col",             Launcher_Theme.ButtonBorderColor);
-	SaveColor("launcher-btn-fore-active-col",        Launcher_Theme.ButtonForeActiveColor);
-	SaveColor("launcher-btn-fore-inactive-col",      Launcher_Theme.ButtonForeColor);
-	SaveColor("launcher-btn-highlight-inactive-col", Launcher_Theme.ButtonHighlightColor);
-	Options_SetBool("nostalgia-classicbg",           Launcher_Theme.ClassicBackground);
+	Options_PauseSaving();
+		SaveColor("launcher-back-col",                   Launcher_Theme.BackgroundColor);
+		SaveColor("launcher-btn-border-col",             Launcher_Theme.ButtonBorderColor);
+		SaveColor("launcher-btn-fore-active-col",        Launcher_Theme.ButtonForeActiveColor);
+		SaveColor("launcher-btn-fore-inactive-col",      Launcher_Theme.ButtonForeColor);
+		SaveColor("launcher-btn-highlight-inactive-col", Launcher_Theme.ButtonHighlightColor);
+		Options_SetBool("nostalgia-classicbg",           Launcher_Theme.ClassicBackground);
+	Options_ResumeSaving();
 }
 
 
@@ -526,7 +529,7 @@ void Launcher_DrawTitle(struct FontDesc* font, const char* text, struct Context2
 	int x;
 
 	/* Skip dragging logo when very small window to save space */
-	if (WindowInfo.Height < 300) return;
+	if (Window_Main.Height < 240) return;
 
 	DrawTextArgs_Make(&args, &title, font, false);
 	x = ctx->width / 2 - Drawer2D_TextWidth(&args) / 2;

@@ -20,10 +20,7 @@
 static cc_bool launcherMode;
 
 struct _DisplayData DisplayInfo;
-struct _WinData WindowInfo;
-// no DPI scaling on Wii/GameCube
-int Display_ScaleX(int x) { return x; }
-int Display_ScaleY(int y) { return y; }
+struct _WindowData WindowInfo;
 
 void Window_Init(void) {
 	DisplayInfo.Width  = SCREEN_WIDTH;
@@ -32,15 +29,17 @@ void Window_Init(void) {
 	DisplayInfo.ScaleX = 1;
 	DisplayInfo.ScaleY = 1;
 	
-	WindowInfo.Width   = SCREEN_WIDTH;
-	WindowInfo.Height  = SCREEN_HEIGHT;
-	WindowInfo.Focused = true;
-	WindowInfo.Exists  = true;
+	Window_Main.Width   = SCREEN_WIDTH;
+	Window_Main.Height  = SCREEN_HEIGHT;
+	Window_Main.Focused = true;
+	Window_Main.Exists  = true;
 
 	Input.Sources = INPUT_SOURCE_GAMEPAD;
 	sceCtrlSetSamplingCycle(0);
 	sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 }
+
+void Window_Free(void) { }
 
 void Window_Create2D(int width, int height) { launcherMode = true;  }
 void Window_Create3D(int width, int height) { launcherMode = false; }
@@ -57,7 +56,7 @@ int Window_IsObscured(void)            { return 0; }
 void Window_Show(void) { }
 void Window_SetSize(int width, int height) { }
 
-void Window_Close(void) {
+void Window_RequestClose(void) {
 	Event_RaiseVoid(&WindowEvents.Closing);
 }
 
@@ -128,10 +127,10 @@ void Window_DrawFramebuffer(Rect2D r) {
 	sceDisplaySetMode(0, SCREEN_WIDTH, SCREEN_HEIGHT);
 	sceDisplaySetFrameBuf(fb, BUFFER_WIDTH, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
 
-	cc_uint32* src = (cc_uint32*)fb_bmp.scan0 + r.X;
-	cc_uint32* dst = (cc_uint32*)fb           + r.X;
+	cc_uint32* src = (cc_uint32*)fb_bmp.scan0 + r.x;
+	cc_uint32* dst = (cc_uint32*)fb           + r.x;
 
-	for (int y = r.Y; y < r.Y + r.Height; y++) 
+	for (int y = r.y; y < r.y + r.Height; y++) 
 	{
 		Mem_Copy(dst + y * BUFFER_WIDTH, src + y * fb_bmp.width, r.Width * 4);
 	}
