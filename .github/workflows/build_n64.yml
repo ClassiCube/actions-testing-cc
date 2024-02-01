@@ -16,7 +16,9 @@ jobs:
       - name: Compile N64 build
         id: compile
         run: |
+          ls /n64_toolchain
           ls /n64_toolchain/include
+          echo "AAA"
           make n64
 
       - uses: ./.github/actions/notify_failure
