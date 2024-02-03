@@ -1,14 +1,22 @@
 ClassiCube is a custom Minecraft Classic compatible client written in C from scratch.<br>
 **It is not affiliated with (or supported by) Mojang AB, Minecraft, or Microsoft in any way.**
 
-![screenshot_n](http://i.imgur.com/FCiwl27.png)
+# What ClassiCube is
 
-# Information
+ClassiCube aims to replicate the 2009 Minecraft Classic client while offering **optional** enhancements to improve gameplay.<br>
+ClassiCube can run on [many systems](#supported-systems), including desktop, web, mobile, and even some consoles.
+<details>
+<summary><b>Features (click to expand)</b></summary>
 
-ClassiCube aims to replicate the 2009 Minecraft Classic client while also:
-* offering **optional** additions to improve gameplay
-* providing much better performance for a large range of hardware
-* running on many different systems (desktop, web, mobile, consoles)
+* Much better performance and minimal memory usage compared to original Minecraft Classic
+* Optional enhancements including custom blocks, models, and environment colors
+* Partially supports some features of Minecraft Classic versions before 0.30
+* Works with effectively all graphics cards that support OpenGL or Direct3D 9
+* Runs on Windows, macOS, Linux, Android, iOS, and in a web browser
+* Also runs on OpenBSD, FreeBSD, NetBSD, Solaris, Haiku, IRIX, SerenityOS
+* Although in various stages of early development, also runs on various consoles
+
+</details>
 
 ClassiCube is not trying to replicate modern Minecraft versions - and therefore it doesn't (and won't) support:
 * survival mode
@@ -24,15 +32,6 @@ ClassiCube strives to replicate the original Minecraft Classic experience by **s
 
 If you're interested in documenting or verifying the behaviour of the original Minecraft Classic, please get in contact with me. (`unknownshadow200` on Discord)
 
-### What ClassiCube is
-* A complete re-implementation of Minecraft Classic 0.30, with **optional** additions
-* Partially supports some features of Minecraft Classic versions before 0.30
-* Lightweight, minimal memory usage compared to original Minecraft Classic
-* Much better performance than original Minecraft Classic
-* Works with effectively all graphics cards that support OpenGL or Direct3D 9
-* Runs on Windows, macOS, Linux, Android, iOS, and in a web browser
-* Also runs on OpenBSD, FreeBSD, NetBSD, Solaris, Haiku, IRIX, SerenityOS
-* Although in various stages of early development, also runs on various consoles
 
 ### Instructions
 Initially, you will need to run ClassiCube.exe to download the required assets from minecraft.net and classicube.net.<br>
