@@ -3,8 +3,7 @@ ClassiCube is a custom Minecraft Classic compatible client written in C from scr
 
 # What ClassiCube is
 
-ClassiCube aims to replicate the 2009 Minecraft Classic client while offering **optional** enhancements to improve gameplay.<br>
-ClassiCube can run on [many systems](#supported-systems), including desktop, web, mobile, and even some consoles.
+ClassiCube aims to replicate the 2009 Minecraft Classic client while offering **optional** enhancements to improve gameplay. ClassiCube can run on [many systems](#supported-systems), including desktop, web, mobile, and even some consoles.
 <details>
 <summary><b>Features (click to expand)</b></summary>
 
@@ -18,22 +17,23 @@ ClassiCube can run on [many systems](#supported-systems), including desktop, web
 
 </details>
 
-ClassiCube is not trying to replicate modern Minecraft versions - and therefore it doesn't (and won't) support:
-* survival mode
-* logging in with Microsoft or Mojang accounts
-* connecting to Minecraft Java Edition or Bedrock Edition servers
-<br/>
+ClassiCube is not trying to replicate modern Minecraft versions. It will never support survival, logging in with Minecraft accounts or connecting to Minecraft servers.
 
-You can download ClassiCube [from here](https://www.classicube.net/download/) and the very latest builds [from here](https://www.classicube.net/nightlies/).
+You can **download ClassiCube** [from here](https://www.classicube.net/download/) and the very latest builds [from here](https://www.classicube.net/nightlies/).
 
-### We need your help
+![classic](https://github.com/ClassiCube/actions-testing-cc/assets/7892772/a233cb4c-296a-4d08-87fc-49874c230d4f)
+
+![enhanced](https://github.com/ClassiCube/actions-testing-cc/assets/7892772/61a064bd-cfaa-4a91-bedf-a16c3dd7e8a2)
+
+
+# We need your help
 
 ClassiCube strives to replicate the original Minecraft Classic experience by **strictly following a [clean room](https://en.wikipedia.org/wiki/Clean_room_design) reverse engineering approach**.
 
 If you're interested in documenting or verifying the behaviour of the original Minecraft Classic, please get in contact with me. (`unknownshadow200` on Discord)
 
 
-### Instructions
+# How to play
 Initially, you will need to run ClassiCube.exe to download the required assets from minecraft.net and classicube.net.<br>
 Just click 'OK' to the dialog menu that appears when you start the launcher.
 
@@ -42,8 +42,6 @@ Run ClassiCube.exe, then click Singleplayer at the main menu.
 
 **Multiplayer**
 Run ClassiCube.exe. You can connect to LAN/locally hosted servers, and classicube.net servers if you have a [ClassiCube account](https://www.classicube.net/).
-
-<br/>
 
 **Note:** When running from within VirtualBox, disable Mouse Integration, otherwise the camera will not work properly
 
@@ -54,7 +52,7 @@ Otherwise:
 * On Windows, you can still run the OpenGL build of ClassiCube anyways. (You can try downloading and using the MESA software renderer from [here](http://download.qt.io/development_releases/prebuilt/llvmpipe/windows/) for slightly better performance though)
 * On other operating systems, you will have to [compile the game yourself](#Compiling). Don't forget to add `-DCC_BUILD_GL11` to the compilation command line so that the compiled game supports OpenGL 1.1.
 
-## Supported systems
+# Supported systems
 
 ClassiCube runs on:
 * Windows - 95 and later
