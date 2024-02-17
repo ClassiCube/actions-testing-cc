@@ -23,7 +23,7 @@ jobs:
         id: compile
         env: 
           COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn"
-          RPI32_FLAGS:  "-fvisibility=hidden -rdynamic -DCC_BUILD_ICON -DCC_BUILD_RPI -I rpi/include -L rpi/lib"
+          RPI32_FLAGS:  "-fvisibility=hidden -rdynamic -DCC_BUILD_ICON -DCC_BUILD_RPI -I rpi/include -L rpi/lib -Wl,-rpath-link rpi/lib"
         run: |
           LATEST_FLAG=-DCC_COMMIT_SHA=\"$GITHUB_SHA\"
           
