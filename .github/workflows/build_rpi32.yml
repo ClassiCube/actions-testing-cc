@@ -13,14 +13,15 @@ jobs:
       image: dockcross/linux-armv6
     steps:
       - uses: actions/checkout@v3
-      - name: Install packages
+      - name: Retrieve OpenGL and X11 files
         run: |
-          sudo apt-get -y install libegl-dev libgles2-mesa-dev libxi-dev
+          wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/rpi32.zip
+          unzip rpi32.zip
       - name: Compile RPI 32 bit build
         id: compile
         env: 
           COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn"
-          RPI32_FLAGS:  "-fvisibility=hidden -rdynamic -DCC_BUILD_ICON -DCC_BUILD_RPI"
+          RPI32_FLAGS:  "-fvisibility=hidden -rdynamic -DCC_BUILD_ICON -DCC_BUILD_RPI -I ~/include -L ~/lib"
         run: |
           LATEST_FLAG=-DCC_COMMIT_SHA=\"$GITHUB_SHA\"
           
