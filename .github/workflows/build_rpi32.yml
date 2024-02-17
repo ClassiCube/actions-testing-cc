@@ -13,7 +13,7 @@ jobs:
       image: dockcross/linux-armv6
     steps:
       - uses: actions/checkout@v3
-      - name: Retrieve OpenGL and X11 files
+      - name: Retrieve OpenGL and X11 dev files
         run: |
           mkdir src/rpi
           cd src/rpi
