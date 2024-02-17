@@ -18,7 +18,7 @@ jobs:
           mkdir src/rpi
           cd src/rpi
           wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/rpi64.zip
-          unzip rpi32.zip     
+          unzip rpi64.zip     
       - name: Compile RPI 64 bit build
         id: compile
         env: 
