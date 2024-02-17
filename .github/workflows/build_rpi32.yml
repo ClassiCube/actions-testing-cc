@@ -10,7 +10,7 @@ jobs:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     container:
-      image: dockcross/linux-armv6
+      image: dockcross/linux-armv6-lts
     steps:
       - uses: actions/checkout@v3
       - name: Retrieve OpenGL and X11 dev files
