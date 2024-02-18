@@ -14,7 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Compile 32 bit FreeBSD builds
-        shell: bash
         id: compile
         env: 
           COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn"
@@ -22,6 +21,7 @@ jobs:
         run: |
           LATEST_FLAG=-DCC_COMMIT_SHA=\"$(git rev-parse --short "$GITHUB_SHA")\"  
           
+          apk add curl
           cd src
           i386-freebsd11-clang *.c ${{ env.COMMON_FLAGS }} ${{ env.PLAT_FLAGS }} $LATEST_FLAG -o cc-fbsd32-gl1 -lX11 -lXi -lpthread -lGL -lm -ldl
 
