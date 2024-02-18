@@ -13,6 +13,9 @@ jobs:
       image: empterdose/freebsd-cross-build:11.4
     steps:
       - uses: actions/checkout@v3
+      - name: Install prerequisites
+        run: apk add curl git
+      - uses: actions/checkout@v3
       - name: Compile 32 bit FreeBSD builds
         id: compile
         env: 
