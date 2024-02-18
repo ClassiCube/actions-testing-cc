@@ -8,14 +8,14 @@ concurrency:
 jobs:
   build:
     if: github.ref_name == github.event.repository.default_branch
-    runs-on: macos-latest
+    runs-on: macOS-11
     steps:
       - uses: actions/checkout@v3
       - name: Compile 32 bit Linux builds
         id: compile
         run: |
           cd ios
-          xcodebuild -sdk iphoneos -configuration Debug
+          xcodebuild -sdk iphoneos -configuration Debug CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
