@@ -11,11 +11,11 @@ jobs:
     runs-on: macOS-11
     steps:
       - uses: actions/checkout@v3
-      - name: Compile 32 bit Linux builds
+      - name: Compile iOS build
         id: compile
         run: |
           cd ios
-          xcodebuild -sdk iphoneos -configuration Debug CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+          xcodebuild -sdk iphoneos13.7 -archivePath unsigned.xcarchive -configuration Debug CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
