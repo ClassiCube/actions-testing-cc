@@ -20,7 +20,13 @@ jobs:
           mkdir src/freebsd64
           cd src/freebsd64
           wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/freebsd64.zip
-          unzip freebsd64.zip     
+          unzip freebsd64.zip
+      - name: Retrieve OpenGL and X11 dev files (32 bit)
+        run: |
+          mkdir src/freebsd32
+          cd src/freebsd32
+          wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/freebsd32.zip
+          unzip freebsd32.zip  
       - name: Compile FreeBSD builds
         id: compile
         shell: bash
@@ -33,8 +39,8 @@ jobs:
           echo $LATEST_FLAG
           
           cd src
+          i386-freebsd11-clang *.c ${{ env.COMMON_FLAGS }} ${{ env.PLAT32_FLAGS }} $LATEST_FLAG -o cc-fbsd32-gl1 -lm -lpthread -lX11 -lXi -lGL -lexecinfo
           x86_64-freebsd11-clang *.c ${{ env.COMMON_FLAGS }} ${{ env.PLAT64_FLAGS }} $LATEST_FLAG -o cc-fbsd64-gl1 -lm -lpthread -lX11 -lXi -lGL -lexecinfo
-          #i386-freebsd11-clang *.c ${{ env.COMMON_FLAGS }} ${{ env.PLAT32_FLAGS }} $LATEST_FLAG -o cc-fbsd32-gl1 -lm -lpthread -lX11 -lXi -lGL -lexecinfo
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
