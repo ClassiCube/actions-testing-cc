@@ -15,6 +15,7 @@ jobs:
         id: compile
         run: |
           cd ios
+          xcodebuild -showsdks
           xcodebuild -sdk iphoneos13.7 -configuration Debug CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 
       - uses: ./.github/actions/notify_failure
