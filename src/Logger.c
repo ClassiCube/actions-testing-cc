@@ -637,6 +637,8 @@ static void PrintRegisters(cc_string* str, void* ctx) {
 /* See /usr/include/sys/regset.h */
 /* -> usr/src/uts/[ARCH]/sys/mcontext.h */
 /* -> usr/src/uts/[ARCH]/sys/regset.h */
+#define __EXTENSIONS__
+
 static void PrintRegisters(cc_string* str, void* ctx) {
 	mcontext_t* r = &((ucontext_t*)ctx)->uc_mcontext;
 
