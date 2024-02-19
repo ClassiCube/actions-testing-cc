@@ -13,6 +13,8 @@ jobs:
       image: ghcr.io/cross-rs/x86_64-unknown-netbsd
     steps:
       - uses: actions/checkout@v3
+      - name: Install prerequisites
+        run: apt install wget
       - name: Retrieve OpenGL and X11 dev files (64 bit)
         run: |
           mkdir src/netbsd64
