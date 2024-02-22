@@ -28,7 +28,7 @@ jobs:
           
           DROID_FLAGS="-fPIC -shared -s -O1 -fvisibility=hidden -rdynamic -funwind-tables"
           DROID_LIBS="-lGLESv2 -lEGL -lm -landroid -llog"
-          NDK_ROOT="/opt/android-sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin""
+          NDK_ROOT="/opt/android-sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
           TOOLS_ROOT="/opt/android-sdk/sdk/build-tools/26.0.0"
           SDK_ROOT="/opt/android-sdk/sdk/platforms/android-28"
           
