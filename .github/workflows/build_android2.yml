@@ -32,7 +32,7 @@ jobs:
           TOOLS_ROOT="/opt/android-sdk/sdk/build-tools/26.0.0"
           SDK_ROOT="/opt/android-sdk/sdk/platforms/android-28"
           
-          find /opt/android-sdk-linux/ndk
+          find /opt/android-sdk-linux/ndk | grep clang
           $NDK_ROOT/armv7a-linux-androideabi16-clang *.c $DROID_FLAGS -march=armv5 $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_16
           $NDK_ROOT/armv7a-linux-androideabi16-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_32
           $NDK_ROOT/aarch64-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_64
