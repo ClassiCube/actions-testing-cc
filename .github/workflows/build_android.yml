@@ -38,7 +38,9 @@ jobs:
           
           DROID_FLAGS="-fPIC -shared -s -O1 -fvisibility=hidden -rdynamic -funwind-tables"
           DROID_LIBS="-lGLESv2 -lEGL -lm -landroid -llog"
-          NDK_ROOT="/home/buildbot/android/android-ndk-r22/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          NDK_BASE=${{ steps.setup-ndk.outputs.ndk-path }}
+          echo $NDK_BASE
+          NDK_ROOT="$NDK_BASE/toolchains/llvm/prebuilt/linux-x86_64/bin"
           TOOLS_ROOT="/home/buildbot/android/sdk/build-tools/26.0.0"
           SDK_ROOT="/home/buildbot/android/sdk/platforms/android-28"
           
