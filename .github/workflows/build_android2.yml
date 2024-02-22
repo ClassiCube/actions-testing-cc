@@ -22,14 +22,13 @@ jobs:
           NIX32_FLAGS:  "-no-pie -fno-pie -m32 -fvisibility=hidden -fcf-protection=none -rdynamic -DCC_BUILD_ICON"
         run: |
           LATEST_FLAG=-DCC_COMMIT_SHA=\"${GITHUB_SHA::9}\"
+          echo $PATH
           echo $ANDROID_HOME
           sdkmanager --list_installed
           
           DROID_FLAGS="-fPIC -shared -s -O1 -fvisibility=hidden -rdynamic -funwind-tables"
           DROID_LIBS="-lGLESv2 -lEGL -lm -landroid -llog"
-          NDK_BASE=${{ steps.setup-ndk.outputs.ndk-path }}
-          echo $NDK_BASE
-          NDK_ROOT="$NDK_BASE/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          NDK_ROOT="/home/buildbot/android/toolchains/llvm/prebuilt/linux-x86_64/bin"
           TOOLS_ROOT="/home/buildbot/android/sdk/build-tools/26.0.0"
           SDK_ROOT="/home/buildbot/android/sdk/platforms/android-28"
           
