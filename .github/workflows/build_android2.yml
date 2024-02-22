@@ -31,7 +31,7 @@ jobs:
           SDK_ROOT="/opt/android-sdk-linux/sdk/platforms/android-34"
           ROOT_DIR=$PWD
 
-          find /opt/android-sdk-linux/sdk/platforms
+          find /opt/android-sdk-linux/platforms
           cd $ROOT_DIR/src
           echo "ARM"
           $NDK_ROOT/armv7a-linux-androideabi19-clang *.c $DROID_FLAGS -march=armv5 $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_16
