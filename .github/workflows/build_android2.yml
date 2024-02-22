@@ -28,15 +28,14 @@ jobs:
           
           DROID_FLAGS="-fPIC -shared -s -O1 -fvisibility=hidden -rdynamic -funwind-tables"
           DROID_LIBS="-lGLESv2 -lEGL -lm -landroid -llog"
-          NDK_ROOT="/opt/android-sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          NDK_ROOT="/opt/android-sdk-linux/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
           TOOLS_ROOT="/opt/android-sdk/sdk/build-tools/26.0.0"
           SDK_ROOT="/opt/android-sdk/sdk/platforms/android-28"
           
-          find /opt/android-sdk-linux/ndk | grep clang
-          $NDK_ROOT/armv7a-linux-androideabi16-clang *.c $DROID_FLAGS -march=armv5 $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_16
-          $NDK_ROOT/armv7a-linux-androideabi16-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_32
+          $NDK_ROOT/armv7a-linux-androideabi19-clang *.c $DROID_FLAGS -march=armv5 $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_16
+          $NDK_ROOT/armv7a-linux-androideabi19-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_32
           $NDK_ROOT/aarch64-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_64
-          $NDK_ROOT/i686-linux-android16-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-x86_32
+          $NDK_ROOT/i686-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-x86_32
           $NDK_ROOT/x86_64-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-x86_64
           
           cd $ROOT_DIR/android/app/src/main
