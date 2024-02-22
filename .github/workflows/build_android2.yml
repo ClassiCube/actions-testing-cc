@@ -19,7 +19,8 @@ jobs:
         id: compile
         env: 
           COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn"
-          NIX32_FLAGS:  "-no-pie -fno-pie -m32 -fvisibility=hidden -fcf-protection=none -rdynamic -DCC_BUILD_ICON"
+          DROID_FLAGS: "-fPIC -shared -s -O1 -fvisibility=hidden -rdynamic -funwind-tables"
+          DROID_LIBS: "-lGLESv2 -lEGL -lm -landroid -llog"
         run: |
           LATEST_FLAG=-DCC_COMMIT_SHA=\"${GITHUB_SHA::9}\"
           
@@ -27,10 +28,10 @@ jobs:
           DROID_LIBS="-lGLESv2 -lEGL -lm -landroid -llog"
           NDK_ROOT="/opt/android-sdk-linux/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
           TOOLS_ROOT="/opt/android-sdk-linux/sdk/build-tools/26.0.0"
-          SDK_ROOT="/opt/android-sdk-linux/sdk/platforms"
+          SDK_ROOT="/opt/android-sdk-linux/sdk/platforms/android-34"
           ROOT_DIR=$PWD
 
-          find /opt/android-sdk-linux/sdk/platforms/android-34
+          find /opt/android-sdk-linux/sdk/platforms
           cd $ROOT_DIR/src
           echo "ARM"
           $NDK_ROOT/armv7a-linux-androideabi19-clang *.c $DROID_FLAGS -march=armv5 $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_16
