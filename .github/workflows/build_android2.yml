@@ -30,11 +30,16 @@ jobs:
           SDK_ROOT="/opt/android-sdk-linux/sdk/platforms/android-34"
           ROOT_DIR=$PWD
 
+          find /opt/android-sdk-linux/sdk/platforms/android-34
           cd $ROOT_DIR/src
+          echo "ARM"
           $NDK_ROOT/armv7a-linux-androideabi19-clang *.c $DROID_FLAGS -march=armv5 $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_16
           $NDK_ROOT/armv7a-linux-androideabi19-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_32
+          echo "AARCH64"
           $NDK_ROOT/aarch64-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_64
+          echo "i686"
           $NDK_ROOT/i686-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-x86_32
+          echo "AMD64"
           $NDK_ROOT/x86_64-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-x86_64
           
           cd $ROOT_DIR/android/app/src/main
