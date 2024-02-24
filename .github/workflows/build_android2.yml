@@ -61,6 +61,9 @@ jobs:
           javac *.java -d $ROOT_DIR/android/app/src/main/obj -classpath $SDK_ROOT/android.jar --release 8
           
           cd $ROOT_DIR/android/app/src/main
+          # get debug signing key
+          echo -n "${{ secrets.ANDROID_SIGNING_KEY_BASE64 }}" | base64 --decode > debug.keystore
+          
           # compile the multiple .class files into one .dex file
           $TOOLS_ROOT/dx --dex --output=obj/classes.dex ./obj
           # create initial .apk with packaged version of resources
@@ -75,14 +78,16 @@ jobs:
           # create aligned .apk file
           $TOOLS_ROOT/zipalign -f 4 obj/cc-signed.apk $ROOT_DIR/src/cc.apk
 
+
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile android build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
+          
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'src/cc-nix32-gl2'
-          DEST_NAME: 'ClassiCube-Linux32-ModernGL'
+          SOURCE_FILE: 'src/cc.apk'
+          DEST_NAME: 'ClassiCube.apk'
