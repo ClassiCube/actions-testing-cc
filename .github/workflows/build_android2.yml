@@ -35,6 +35,9 @@ jobs:
           mkdir build-tools
           wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/build-tools.zip
           unzip build-tools.zip -d build-tools
+          chmod +x build-tools/aapt
+          chmod +x build-tools/dx
+          chmod +x build-tools/zipalign
 
           cd $ROOT_DIR/src
           $NDK_ROOT/armv7a-linux-androideabi19-clang *.c $DROID_FLAGS -march=armv5 $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_16
