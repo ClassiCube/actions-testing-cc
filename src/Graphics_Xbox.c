@@ -141,8 +141,7 @@ void Gfx_FreeState(void) { }
 *#########################################################################################################################*/
 typedef struct CCTexture_ {
 	cc_uint32 width, height;
-	cc_uint32 pitch, pad;
-	cc_uint32 pixels[];
+	cc_uint32* pixels;
 } CCTexture;
 
 // See Graphics_Dreamcast.c for twiddling explanation
@@ -195,12 +194,12 @@ static void ConvertTexture(cc_uint32* dst, struct Bitmap* bmp) {
 }
 
 static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, cc_uint8 flags, cc_bool mipmaps) {
-	int size = 16 + bmp->width * bmp->height * 4;
-	CCTexture* tex = MmAllocateContiguousMemoryEx(size, 0, MAX_RAM_ADDR, 16, PAGE_WRITECOMBINE | PAGE_READWRITE);
+	int size = bmp->width * bmp->height * 4;
+	CCTexture* tex = Mem_Alloc(1, sizeof(CCTexture), "GPU texture");
+	tex->pixels    = MmAllocateContiguousMemoryEx(size, 0, MAX_RAM_ADDR, 0, PAGE_WRITECOMBINE | PAGE_READWRITE);
 	
 	tex->width  = bmp->width;
 	tex->height = bmp->height;
-	tex->pitch  = bmp->width * 4;
 	ConvertTexture(tex->pixels, bmp);
 	return tex;
 }
@@ -237,7 +236,12 @@ void Gfx_UpdateTexturePart(GfxResourceID texId, int x, int y, struct Bitmap* par
 }
 
 void Gfx_DeleteTexture(GfxResourceID* texId) {
-	// TODO
+	CCTexture* tex = (CCTexture*)(*texId);
+	if (!tex) return;
+
+	MmFreeContiguousMemory(tex->pixels);
+	Mem_Free(tex);
+	*texId = NULL;
 }
 
 void Gfx_EnableMipmaps(void) { }
@@ -255,15 +259,18 @@ void Gfx_BindTexture(GfxResourceID texId) {
 	// set texture stage 0 state
 	p = pb_push1(p, NV097_SET_TEXTURE_OFFSET, (DWORD)tex->pixels & 0x03ffffff);
 	p = pb_push1(p, NV097_SET_TEXTURE_FORMAT,
-					0xA |
-					MASK(NV097_SET_TEXTURE_FORMAT_COLOR, NV097_SET_TEXTURE_FORMAT_COLOR_SZ_A8R8G8B8) |
+					MASK(NV097_SET_TEXTURE_FORMAT_CONTEXT_DMA,    2) |
+					MASK(NV097_SET_TEXTURE_FORMAT_BORDER_SOURCE,  NV097_SET_TEXTURE_FORMAT_BORDER_SOURCE_COLOR) |
+					MASK(NV097_SET_TEXTURE_FORMAT_COLOR,          NV097_SET_TEXTURE_FORMAT_COLOR_SZ_A8R8G8B8) |
 					MASK(NV097_SET_TEXTURE_FORMAT_DIMENSIONALITY, 2)  | // textures have U and V
 					MASK(NV097_SET_TEXTURE_FORMAT_MIPMAP_LEVELS,  1)  |
 					MASK(NV097_SET_TEXTURE_FORMAT_BASE_SIZE_U, log_u) |
 					MASK(NV097_SET_TEXTURE_FORMAT_BASE_SIZE_V, log_v) |
-					MASK(NV097_SET_TEXTURE_FORMAT_BASE_SIZE_P, 1)); // 1 slice
+					MASK(NV097_SET_TEXTURE_FORMAT_BASE_SIZE_P,    0)); // log2(1) slice = 0
 	p = pb_push1(p, NV097_SET_TEXTURE_CONTROL0, 
-					NV097_SET_TEXTURE_CONTROL0_ENABLE | NV097_SET_TEXTURE_CONTROL0_MAX_LOD_CLAMP);
+					NV097_SET_TEXTURE_CONTROL0_ENABLE | 
+					MASK(NV097_SET_TEXTURE_CONTROL0_MIN_LOD_CLAMP, 0) |
+					MASK(NV097_SET_TEXTURE_CONTROL0_MAX_LOD_CLAMP, 1));
 	p = pb_push1(p, NV097_SET_TEXTURE_ADDRESS, 
 					0x00010101); // modes (0x0W0V0U wrapping: 1=wrap 2=mirror 3=clamp 4=border 5=clamp to edge)
 	p = pb_push1(p, NV097_SET_TEXTURE_FILTER,
@@ -282,7 +289,7 @@ void Gfx_BindTexture(GfxResourceID texId) {
 *#########################################################################################################################*/
 static PackedCol clearColor;
 
-void Gfx_ClearCol(PackedCol color) {
+void Gfx_ClearColor(PackedCol color) {
 	clearColor = color;
 }
 
@@ -319,12 +326,7 @@ void Gfx_SetDepthTest(cc_bool enabled) {
 }
 
 
-void Gfx_DepthOnlyRendering(cc_bool depthOnly) {
-	cc_bool enabled = !depthOnly;
-	Gfx_SetColWriteMask(enabled, enabled, enabled, enabled);
-}
-
-void Gfx_SetColWriteMask(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
+static void SetColorWrite(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
 	unsigned mask = 0;
 	if (r) mask |= NV097_SET_COLOR_MASK_RED_WRITE_ENABLE;
 	if (g) mask |= NV097_SET_COLOR_MASK_GREEN_WRITE_ENABLE;
@@ -334,6 +336,12 @@ void Gfx_SetColWriteMask(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
 	uint32_t* p = pb_begin();
 	p = pb_push1(p, NV097_SET_COLOR_MASK, mask);
 	pb_end(p);
+}
+
+void Gfx_DepthOnlyRendering(cc_bool depthOnly) {
+	cc_bool enabled = !depthOnly;
+	SetColorWrite(enabled & gfx_colorMask[0], enabled & gfx_colorMask[1], 
+				  enabled & gfx_colorMask[2], enabled & gfx_colorMask[3]);
 }
 
 
@@ -360,15 +368,17 @@ void Gfx_BeginFrame(void) {
 	pb_target_back_buffer();
 }
 
-void Gfx_Clear(void) {
+void Gfx_ClearBuffers(GfxBuffers buffers) {
 	int width  = pb_back_buffer_width();
 	int height = pb_back_buffer_height();
 	
 	// TODO do ourselves
-	pb_erase_depth_stencil_buffer(0, 0, width, height);
-	pb_fill(0, 0, width, height, clearColor);
-	//pb_erase_text_screen();
+	if (buffers & GFX_BUFFER_DEPTH)
+		pb_erase_depth_stencil_buffer(0, 0, width, height);
+	if (buffers & GFX_BUFFER_COLOR)
+		pb_fill(0, 0, width, height, clearColor);
 	
+	//pb_erase_text_screen();
 	while (pb_busy()) { } // Wait for completion TODO: necessary??
 }
 

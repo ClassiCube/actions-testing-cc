@@ -38,6 +38,8 @@ extern const cc_result ReturnCode_DirectoryExists;
 extern cc_bool Platform_SingleProcess;
 /* Suffix added to app name sent to the server */
 extern const char* Platform_AppNameSuffix;
+/* Whether the filesystem is readonly (i.e. cannot make chat logs, cache, etc) */
+extern cc_bool Platform_ReadonlyFilesystem;
 
 #ifdef CC_BUILD_WIN
 typedef struct cc_winstring_ {
@@ -206,12 +208,9 @@ cc_result File_Length(cc_file file, cc_uint32* len);
 typedef void (*Thread_StartFunc)(void);
 /* Blocks the current thread for the given number of milliseconds. */
 CC_API void Thread_Sleep(cc_uint32 milliseconds);
-/* Initialises a new thread that will run the given function. */
-/* Because of backend differences, func must also be provided in Thread_Start2 */
-CC_API void* Thread_Create(Thread_StartFunc func);
-/* Starts a new thread that runs the given function. */
+/* Initialises and starts a new thread that runs the given function. */
 /* NOTE: Threads must either be detached or joined, otherwise data leaks. */
-CC_API void Thread_Start2(void* handle, Thread_StartFunc func);
+CC_API void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char* name);
 /* Frees the platform specific persistent data associated with the thread. */
 /* NOTE: Once a thread has been detached, Thread_Join can no longer be used. */
 CC_API void Thread_Detach(void* handle);

@@ -142,8 +142,8 @@ static void HandleButtons(xid_gamepad_in* gp) {
 }
 
 static void HandleJoystick_Left(int x, int y) {
-	if (Math_AbsI(x) <= 256) x = 0;
-	if (Math_AbsI(y) <= 256) y = 0;	
+	if (Math_AbsI(x) <= 512) x = 0;
+	if (Math_AbsI(y) <= 512) y = 0;	
 	
 	if (x == 0 && y == 0) return;
 	Input.JoystickMovement = true;
@@ -153,10 +153,10 @@ static void HandleJoystick_Left(int x, int y) {
 static void HandleJoystick_Right(int x, int y, double delta) {
 	float scale = (delta * 60.0) / 8192.0f;
 	
-	if (Math_AbsI(x) <= 256) x = 0;
-	if (Math_AbsI(y) <= 256) y = 0;
+	if (Math_AbsI(x) <= 512) x = 0;
+	if (Math_AbsI(y) <= 512) y = 0;
 	
-	Event_RaiseRawMove(&PointerEvents.RawMoved, x * scale, -y * scale);	
+	Event_RaiseRawMove(&ControllerEvents.RawMoved, x * scale, -y * scale);	
 }
 
 void Window_ProcessEvents(double delta) {
@@ -179,25 +179,23 @@ void Window_UpdateRawMouse(void)  { }
 /*########################################################################################################################*
 *------------------------------------------------------Framebuffer--------------------------------------------------------*
 *#########################################################################################################################*/
-static struct Bitmap fb_bmp;
 void Window_AllocFramebuffer(struct Bitmap* bmp) {
 	bmp->scan0 = (BitmapCol*)Mem_Alloc(bmp->width * bmp->height, 4, "window pixels");
-	fb_bmp = *bmp;
 }
 
-void Window_DrawFramebuffer(Rect2D r) {
+void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
 	void* fb = XVideoGetFB();
 	//XVideoWaitForVBlank();
 	// XVideoWaitForVBlank installs an interrupt handler for VBlank - 
 	//  however this will cause pbkit's attempt to install an interrupt
 	//  handler fail - so instead just accept tearing in the launcher
 
-	cc_uint32* src = (cc_uint32*)fb_bmp.scan0 + r.x;
-	cc_uint32* dst = (cc_uint32*)fb           + r.x;
+	cc_uint32* src = (cc_uint32*)bmp->scan0 + r.x;
+	cc_uint32* dst = (cc_uint32*)fb         + r.x;
 
 	for (int y = r.y; y < r.y + r.Height; y++) 
 	{
-		Mem_Copy(dst + y * fb_bmp.width, src + y * fb_bmp.width, r.Width * 4);
+		Mem_Copy(dst + y * bmp->width, src + y * bmp->width, r.Width * 4);
 	}
 }
 

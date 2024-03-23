@@ -11,7 +11,6 @@
 #include <pspdebug.h>
 #include <pspctrl.h>
 #include <pspgu.h>
-#include <pspgum.h>
 
 #define BUFFER_WIDTH  512
 #define SCREEN_WIDTH  480
@@ -34,7 +33,7 @@ static void guInit(void) {
 	void* framebuffer0 = (void*)0;
 	void* framebuffer1 = (void*)FB_SIZE;
 	void* depthbuffer  = (void*)(FB_SIZE + FB_SIZE);
-	gumLoadIdentity(&identity);
+	Mem_Copy(&identity, &Matrix_Identity, sizeof(ScePspFMatrix4));
 	
 	sceGuInit();
 	sceGuStart(GU_DIRECT, list);
@@ -171,13 +170,13 @@ void Gfx_SetFaceCulling(cc_bool enabled)   { /*GU_Toggle(GU_CULL_FACE); */ } // 
 void Gfx_SetAlphaBlending(cc_bool enabled) { GU_Toggle(GU_BLEND); }
 void Gfx_SetAlphaArgBlend(cc_bool enabled) { }
 
-void Gfx_ClearCol(PackedCol color) {
+void Gfx_ClearColor(PackedCol color) {
 	if (color == gfx_clearColor) return;
 	sceGuClearColor(color);
 	gfx_clearColor = color;
 }
 
-void Gfx_SetColWriteMask(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
+static void SetColorWrite(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
 	unsigned int mask = 0xffffffff;
 	if (r) mask &= 0xffffff00;
 	if (g) mask &= 0xffff00ff;
@@ -251,7 +250,14 @@ void Gfx_SetFpsLimit(cc_bool vsync, float minFrameMs) {
 void Gfx_BeginFrame(void) {
 	sceGuStart(GU_DIRECT, list);
 }
-void Gfx_Clear(void) { sceGuClear(GU_COLOR_BUFFER_BIT | GU_DEPTH_BUFFER_BIT); }
+
+void Gfx_ClearBuffers(GfxBuffers buffers) {
+	int targets = 0;
+	if (buffers & GFX_BUFFER_COLOR) targets |= GU_COLOR_BUFFER_BIT;
+	if (buffers & GFX_BUFFER_DEPTH) targets |= GU_DEPTH_BUFFER_BIT;
+	
+	sceGuClear(targets);
+}
 
 void Gfx_EndFrame(void) {
 	sceGuFinish();
@@ -360,7 +366,8 @@ void Gfx_SetAlphaTest(cc_bool enabled) { GU_Toggle(GU_ALPHA_TEST); }
 
 void Gfx_DepthOnlyRendering(cc_bool depthOnly) {
 	cc_bool enabled = !depthOnly;
-	Gfx_SetColWriteMask(enabled, enabled, enabled, enabled);
+	SetColorWrite(enabled & gfx_colorMask[0], enabled & gfx_colorMask[1], 
+				  enabled & gfx_colorMask[2], enabled & gfx_colorMask[3]);
 }
 
 
@@ -368,10 +375,10 @@ void Gfx_DepthOnlyRendering(cc_bool depthOnly) {
 *---------------------------------------------------------Matrices--------------------------------------------------------*
 *#########################################################################################################################*/
 static int matrix_modes[] = { GU_PROJECTION, GU_VIEW };
-static ScePspFMatrix4 tmp_matrix;
+static ScePspFMatrix4 tmp_matrix; // 16 byte aligned
 
 void Gfx_LoadMatrix(MatrixType type, const struct Matrix* matrix) {
-	gumLoadMatrix(&tmp_matrix, matrix);
+	Mem_Copy(&tmp_matrix, matrix, sizeof(ScePspFMatrix4));
 	sceGuSetMatrix(matrix_modes[type], &tmp_matrix);
 }
 

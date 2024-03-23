@@ -332,14 +332,23 @@ static void* ExecThread(void* param) {
 }
 #endif
 
-void* Thread_Create(Thread_StartFunc func) {
-	return Mem_Alloc(1, sizeof(pthread_t), "thread");
-}
+void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char* name) {
+	pthread_t* ptr = (pthread_t*)Mem_Alloc(1, sizeof(pthread_t), "thread");
+	int res;
+	*handle = ptr;
 
-void Thread_Start2(void* handle, Thread_StartFunc func) {
-	pthread_t* ptr = (pthread_t*)handle;
-	int res = pthread_create(ptr, NULL, ExecThread, (void*)func);
+	pthread_attr_t attrs;
+	pthread_attr_init(&attrs);
+	pthread_attr_setstacksize(&attrs, stackSize);
+	
+	res = pthread_create(ptr, &attrs, ExecThread, (void*)func);
 	if (res) Logger_Abort2(res, "Creating thread");
+	pthread_attr_destroy(&attrs);
+	
+	#if defined CC_BUILD_LINUX || defined CC_BUILD_HAIKU
+	extern int pthread_setname_np(pthread_t thread, const char *name);
+	pthread_setname_np(*ptr, name);
+	#endif
 }
 
 void Thread_Detach(void* handle) {
@@ -933,6 +942,12 @@ cc_bool Updater_Clean(void) { return true; }
 	#else
 	const struct UpdaterInfo Updater_Info = { "&eCompile latest source code to update", 0 };
 	#endif
+#elif defined CC_BUILD_HAIKU
+	#if __x86_64__
+	const struct UpdaterInfo Updater_Info = { "", 1, { { "OpenGL", "cc-haiku-64" } } };
+	#else
+	const struct UpdaterInfo Updater_Info = { "&eCompile latest source code to update", 0 };
+	#endif
 #else
 	const struct UpdaterInfo Updater_Info = { "&eCompile latest source code to update", 0 };
 #endif
@@ -1206,19 +1221,28 @@ static cc_result GetMachineID(cc_uint32* key) {
 /* Read kIOPlatformUUIDKey from I/O registry for the key */
 static cc_result GetMachineID(cc_uint32* key) {
 	io_registry_entry_t registry;
-	CFStringRef uuid = NULL;
+	CFStringRef devID = NULL;
 	char tmp[256] = { 0 };
 
-	registry = IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/");
-	if (!registry) return ERR_NOT_SUPPORTED;
-
 #ifdef kIOPlatformUUIDKey
-	uuid = IORegistryEntryCreateCFProperty(registry, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
-	if (uuid && CFStringGetCString(uuid, tmp, sizeof(tmp), kCFStringEncodingUTF8)) {
+    registry = IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/");
+    if (!registry) return ERR_NOT_SUPPORTED;
+    
+	devID = IORegistryEntryCreateCFProperty(registry, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
+	if (devID && CFStringGetCString(devID, tmp, sizeof(tmp), kCFStringEncodingUTF8)) {
 		DecodeMachineID(tmp, String_Length(tmp), key);	
 	}
+#else
+    registry = IOServiceGetMatchingService(kIOMasterPortDefault,
+                                           IOServiceMatching("IOPlatformExpertDevice"));
+    
+    devID = IORegistryEntryCreateCFProperty(registry, CFSTR(kIOPlatformSerialNumberKey), kCFAllocatorDefault, 0);
+    if (devID && CFStringGetCString(devID, tmp, sizeof(tmp), kCFStringEncodingUTF8)) {
+        Mem_Copy(key, tmp, MACHINEID_LEN / 2);
+    }
 #endif
-	if (uuid) CFRelease(uuid);
+    
+	if (devID) CFRelease(devID);
 	IOObjectRelease(registry);
 	return tmp[0] ? 0 : ERR_NOT_SUPPORTED;
 }

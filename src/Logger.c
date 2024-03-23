@@ -8,34 +8,29 @@
 #include "Utils.h"
 
 #if defined CC_BUILD_WEB
-	/* Can't see native CPU state with javascript */
+/* Can't see native CPU state with javascript */
 #elif defined CC_BUILD_WIN
-	#define WIN32_LEAN_AND_MEAN
-	#define NOSERVICE
-	#define NOMCX
-	#define NOIME
-	#define CUR_PROCESS_HANDLE ((HANDLE)-1) /* GetCurrentProcess() always returns -1 */
-	
-	#include <windows.h>
-	#include <imagehlp.h>
-	static HANDLE curProcess = CUR_PROCESS_HANDLE;
+#define WIN32_LEAN_AND_MEAN
+#define NOSERVICE
+#define NOMCX
+#define NOIME
+#define CUR_PROCESS_HANDLE ((HANDLE)-1) /* GetCurrentProcess() always returns -1 */
+
+#include <windows.h>
+#include <imagehlp.h>
+static HANDLE curProcess = CUR_PROCESS_HANDLE;
 #elif defined CC_BUILD_OPENBSD || defined CC_BUILD_HAIKU || defined CC_BUILD_SERENITY
-	#include <signal.h>
-	/* These operating systems don't provide sys/ucontext.h */
-	/*  But register constants be found from includes in <signal.h> */
-#elif defined CC_BUILD_SOLARIS
-	/* Need to define this to get REG_ constants */
-	#define __EXTENSIONS__
-	#include <sys/ucontext.h>
-	#include <signal.h>
+#include <signal.h>
+/* These operating systems don't provide sys/ucontext.h */
+/*  But register constants be found from includes in <signal.h> */
 #elif defined CC_BUILD_LINUX || defined CC_BUILD_ANDROID
-	/* Need to define this to get REG_ constants */
-	#define _GNU_SOURCE
-	#include <sys/ucontext.h>
-	#include <signal.h>
+/* Need to define this to get REG_ constants */
+#define _GNU_SOURCE
+#include <sys/ucontext.h>
+#include <signal.h>
 #elif defined CC_BUILD_POSIX
-	#include <signal.h>
-	#include <sys/ucontext.h>
+#include <signal.h>
+#include <sys/ucontext.h>
 #endif
 #ifdef CC_BUILD_DARWIN
 /* Need this to detect macOS < 10.4, and switch to NS* api instead if so */
@@ -642,7 +637,6 @@ static void PrintRegisters(cc_string* str, void* ctx) {
 /* See /usr/include/sys/regset.h */
 /* -> usr/src/uts/[ARCH]/sys/mcontext.h */
 /* -> usr/src/uts/[ARCH]/sys/regset.h */
-
 static void PrintRegisters(cc_string* str, void* ctx) {
 	mcontext_t* r = &((ucontext_t*)ctx)->uc_mcontext;
 

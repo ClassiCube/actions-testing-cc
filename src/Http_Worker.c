@@ -1,18 +1,10 @@
 #include "Core.h"
 #ifndef CC_BUILD_WEB
 #include "_HttpBase.h"
-static void* workerWaitable;
-static void* workerThread;
-static void* pendingMutex;
-static struct RequestList pendingReqs;
-
-static void* curRequestMutex;
-static struct HttpRequest http_curRequest;
-static volatile int http_curProgress = HTTP_PROGRESS_NOT_WORKING_ON;
 
 /* Allocates initial data buffer to store response contents */
 static void Http_BufferInit(struct HttpRequest* req) {
-	http_curProgress = 0;
+	req->progress  = 0;
 	req->_capacity = req->contentLength ? req->contentLength : 1;
 	req->data      = (cc_uint8*)Mem_Alloc(req->_capacity, 1, "http data");
 	req->size      = 0;
@@ -30,26 +22,13 @@ static void Http_BufferEnsure(struct HttpRequest* req, cc_uint32 amount) {
 /* Increases size and updates current progress */
 static void Http_BufferExpanded(struct HttpRequest* req, cc_uint32 read) {
 	req->size += read;
-	if (req->contentLength) http_curProgress = (int)(100.0f * req->size / req->contentLength);
+	if (req->contentLength) req->progress = (int)(100.0f * req->size / req->contentLength);
 }
 
 
 /*########################################################################################################################*
-*--------------------------------------------------Common downloader code-------------------------------------------------*
+*---------------------------------------------------Common backend code---------------------------------------------------*
 *#########################################################################################################################*/
-/* Sets up state to begin a http request */
-static void Http_BeginRequest(struct HttpRequest* req, cc_string* url) {
-	Http_GetUrl(req, url);
-	Platform_Log2("Fetching %s (type %b)", url, &req->requestType);
-
-	Mutex_Lock(curRequestMutex);
-	{
-		HttpRequest_Copy(&http_curRequest, req);
-		http_curProgress = HTTP_PROGRESS_MAKING_REQUEST;
-	}
-	Mutex_Unlock(curRequestMutex);
-}
-
 static void Http_ParseCookie(struct HttpRequest* req, const cc_string* value) {
 	cc_string name, data;
 	int dataEnd;
@@ -130,74 +109,6 @@ static cc_string* Http_GetUserAgent_UNSAFE(void) {
 	String_AppendConst(&userAgent, GAME_APP_NAME);
 	String_AppendConst(&userAgent, Platform_AppNameSuffix);
 	return &userAgent;
-}
-
-static void Http_SignalWorker(void) { Waitable_Signal(workerWaitable); }
-
-/* Adds a req to the list of pending requests, waking up worker thread if needed */
-static void HttpBackend_Add(struct HttpRequest* req, cc_uint8 flags) {
-	Mutex_Lock(pendingMutex);
-	{	
-		RequestList_Append(&pendingReqs, req, flags);
-	}
-	Mutex_Unlock(pendingMutex);
-	Http_SignalWorker();
-}
-
-
-/*########################################################################################################################*
-*----------------------------------------------------Http public api------------------------------------------------------*
-*#########################################################################################################################*/
-cc_bool Http_GetResult(int reqID, struct HttpRequest* item) {
-	int i;
-	Mutex_Lock(processedMutex);
-	{
-		i = RequestList_Find(&processedReqs, reqID);
-		if (i >= 0) HttpRequest_Copy(item, &processedReqs.entries[i]);
-		if (i >= 0) RequestList_RemoveAt(&processedReqs, i);
-	}
-	Mutex_Unlock(processedMutex);
-	return i >= 0;
-}
-
-cc_bool Http_GetCurrent(int* reqID, int* progress) {
-	Mutex_Lock(curRequestMutex);
-	{
-		*reqID    = http_curRequest.id;
-		*progress = http_curProgress;
-	}
-	Mutex_Unlock(curRequestMutex);
-	return *reqID != 0;
-}
-
-int Http_CheckProgress(int reqID) {
-	int curReqID, progress;
-	Http_GetCurrent(&curReqID, &progress);
-
-	if (reqID != curReqID) progress = HTTP_PROGRESS_NOT_WORKING_ON;
-	return progress;
-}
-
-void Http_ClearPending(void) {
-	Mutex_Lock(pendingMutex);
-	{
-		RequestList_Free(&pendingReqs);
-	}
-	Mutex_Unlock(pendingMutex);
-}
-
-void Http_TryCancel(int reqID) {
-	Mutex_Lock(pendingMutex);
-	{
-		RequestList_TryFree(&pendingReqs, reqID);
-	}
-	Mutex_Unlock(pendingMutex);
-
-	Mutex_Lock(processedMutex);
-	{
-		RequestList_TryFree(&processedReqs, reqID);
-	}
-	Mutex_Unlock(processedMutex);
 }
 
 
@@ -410,10 +321,10 @@ static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* url) {
 	/* TODO stackalloc instead and then copy to dynamic array later? */
 	/*  probably not worth the extra complexity though */
 
-	req->_capacity   = 0;
-	http_curProgress = HTTP_PROGRESS_FETCHING_DATA;
+	req->_capacity = 0;
+	req->progress  = HTTP_PROGRESS_FETCHING_DATA;
 	res = _curl_easy_perform(curl);
-	http_curProgress = 100;
+	req->progress  = 100;
 
 	/* Free error string if it isn't needed */
 	if (req->error && !req->error[0]) {
@@ -644,7 +555,8 @@ enum HTTP_RESPONSE_STATE {
 	HTTP_RESPONSE_STATE_CHUNK_TRAILERS,
 	HTTP_RESPONSE_STATE_DONE
 };
-#define HTTP_HEADER_MAX_LENGTH 512
+#define HTTP_HEADER_MAX_LENGTH   4096
+#define HTTP_LOCATION_MAX_LENGTH 256
 
 struct HttpClientState {
 	enum HTTP_RESPONSE_STATE state;
@@ -656,7 +568,7 @@ struct HttpClientState {
 	cc_string header, location;
 	struct HttpUrl url;
 	char _headerBuffer[HTTP_HEADER_MAX_LENGTH];
-	char _locationBuffer[HTTP_HEADER_MAX_LENGTH];
+	char _locationBuffer[HTTP_LOCATION_MAX_LENGTH];
 };
 
 static void HttpClientState_Reset(struct HttpClientState* state) {
@@ -703,8 +615,8 @@ static cc_result HttpClient_SendRequest(struct HttpClientState* state) {
 	cc_uint32 wrote;
 
 	String_InitArray(inputMsg, inputBuffer);
-	state->req->meta = &inputMsg;
-	http_curProgress = HTTP_PROGRESS_FETCHING_DATA;
+	state->req->meta     = &inputMsg;
+	state->req->progress = HTTP_PROGRESS_FETCHING_DATA;
 	HttpClient_Serialise(state);
 
 	/* TODO check that wrote is >= inputMsg.length */
@@ -1119,10 +1031,10 @@ static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* url) {
 	Http_AddHeader(req, "User-Agent", Http_GetUserAgent_UNSAFE());
 	if (req->data && (res = Http_SetData(env, req))) return res;
 
-	req->_capacity   = 0;
-	http_curProgress = HTTP_PROGRESS_FETCHING_DATA;
+	req->_capacity = 0;
+	req->progress  = HTTP_PROGRESS_FETCHING_DATA;
 	res = JavaSCall_Int(env, JAVA_httpPerform, NULL);
-	http_curProgress = 100;
+	req->progress  = 100;
 	return res;
 }
 #elif defined CC_BUILD_CFNETWORK
@@ -1245,21 +1157,127 @@ static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* url) {
 }
 #endif
 
-static void ClearCurrentRequest(void) {
+
+static void* workerWaitable;
+static void* workerThread;
+
+static void* pendingMutex;
+static struct RequestList pendingReqs;
+
+static void* curRequestMutex;
+static struct HttpRequest http_curRequest;
+
+
+/*########################################################################################################################*
+*----------------------------------------------------Http public api------------------------------------------------------*
+*#########################################################################################################################*/
+cc_bool Http_GetResult(int reqID, struct HttpRequest* item) {
+	int i;
+	Mutex_Lock(processedMutex);
+	{
+		i = RequestList_Find(&processedReqs, reqID);
+		if (i >= 0) HttpRequest_Copy(item, &processedReqs.entries[i]);
+		if (i >= 0) RequestList_RemoveAt(&processedReqs, i);
+	}
+	Mutex_Unlock(processedMutex);
+	return i >= 0;
+}
+
+cc_bool Http_GetCurrent(int* reqID, int* progress) {
 	Mutex_Lock(curRequestMutex);
 	{
-		http_curRequest.id = 0;
-		http_curProgress   = HTTP_PROGRESS_NOT_WORKING_ON;
+		*reqID    = http_curRequest.id;
+		*progress = http_curRequest.progress;
+	}
+	Mutex_Unlock(curRequestMutex);
+	return *reqID != 0;
+}
+
+int Http_CheckProgress(int reqID) {
+	int curReqID, progress;
+	Http_GetCurrent(&curReqID, &progress);
+
+	if (reqID != curReqID) progress = HTTP_PROGRESS_NOT_WORKING_ON;
+	return progress;
+}
+
+void Http_ClearPending(void) {
+	Mutex_Lock(pendingMutex);
+	{
+		RequestList_Free(&pendingReqs);
+	}
+	Mutex_Unlock(pendingMutex);
+}
+
+void Http_TryCancel(int reqID) {
+	Mutex_Lock(pendingMutex);
+	{
+		RequestList_TryFree(&pendingReqs, reqID);
+	}
+	Mutex_Unlock(pendingMutex);
+
+	Mutex_Lock(processedMutex);
+	{
+		RequestList_TryFree(&processedReqs, reqID);
+	}
+	Mutex_Unlock(processedMutex);
+}
+
+
+/*########################################################################################################################*
+*-----------------------------------------------------Http worker---------------------------------------------------------*
+*#########################################################################################################################*/
+/* Sets up state to begin a http request */
+static void PrepareCurrentRequest(struct HttpRequest* req, cc_string* url) {
+	static const char* verbs[] = { "GET", "HEAD", "POST" };
+	Http_GetUrl(req, url);
+	Platform_Log2("Fetching %s (%c)", url, verbs[req->requestType]);
+	/* TODO change to verbs etc */
+
+	Mutex_Lock(curRequestMutex);
+	{
+		HttpRequest_Copy(&http_curRequest, req);
+		http_curRequest.progress = HTTP_PROGRESS_MAKING_REQUEST;
 	}
 	Mutex_Unlock(curRequestMutex);
 }
 
-static void WorkerLoop(void) {
-	char urlBuffer[URL_MAX_SIZE]; cc_string url;
-	struct HttpRequest request;
-	cc_bool hasRequest;
+static void PerformRequest(struct HttpRequest* req, cc_string* url) {
 	cc_uint64 beg, end;
 	int elapsed;
+
+	beg = Stopwatch_Measure();
+	req->result = HttpBackend_Do(req, url);
+	end = Stopwatch_Measure();
+
+	elapsed = Stopwatch_ElapsedMS(beg, end);
+	Platform_Log4("HTTP: result %i (http %i) in %i ms (%i bytes)",
+		&req->result, &req->statusCode, &elapsed, &req->size);
+
+	Http_FinishRequest(req);
+}
+
+static void ClearCurrentRequest(void) {
+	Mutex_Lock(curRequestMutex);
+	{
+		http_curRequest.id       = 0;
+		http_curRequest.progress = HTTP_PROGRESS_NOT_WORKING_ON;
+	}
+	Mutex_Unlock(curRequestMutex);
+}
+
+static void DoRequest(struct HttpRequest* request) {
+	char urlBuffer[URL_MAX_SIZE]; cc_string url;
+
+	String_InitArray(url, urlBuffer);
+	PrepareCurrentRequest(request, &url);
+	PerformRequest(&http_curRequest, &url);
+	ClearCurrentRequest();
+}
+
+static void WorkerLoop(void) {
+	struct HttpRequest request;
+	cc_bool hasRequest;
 
 	for (;;) {
 		hasRequest = false;
@@ -1274,48 +1292,49 @@ static void WorkerLoop(void) {
 		}
 		Mutex_Unlock(pendingMutex);
 
-		/* Block until another thread submits a request to do */
-		if (!hasRequest) {
+		if (hasRequest) {
+			DoRequest(&request);
+		} else {
+			/* Block until another thread submits a request to do */
 			Platform_LogConst("Going back to sleep...");
 			Waitable_Wait(workerWaitable);
-			continue;
 		}
-
-		String_InitArray(url, urlBuffer);
-		Http_BeginRequest(&request, &url);
-
-		beg = Stopwatch_Measure();
-		request.result = HttpBackend_Do(&request, &url);
-		end = Stopwatch_Measure();
-
-		elapsed = Stopwatch_ElapsedMS(beg, end);
-		Platform_Log4("HTTP: result %i (http %i) in %i ms (%i bytes)",
-					&request.result, &request.statusCode, &elapsed, &request.size);
-
-		Http_FinishRequest(&request);
-		ClearCurrentRequest();
 	}
 }
 
+/* Adds a req to the list of pending requests, waking up worker thread if needed */
+static void HttpBackend_Add(struct HttpRequest* req, cc_uint8 flags) {
+#ifdef CC_BUILD_PSP
+	/* TODO why doesn't threading work properly */
+	DoRequest(req);
+#else
+	Mutex_Lock(pendingMutex);
+	{
+		RequestList_Append(&pendingReqs, req, flags);
+	}
+	Mutex_Unlock(pendingMutex);
+	Waitable_Signal(workerWaitable);
+#endif
+}
 
 /*########################################################################################################################*
 *-----------------------------------------------------Http component------------------------------------------------------*
 *#########################################################################################################################*/
 static void Http_Init(void) {
 	Http_InitCommon();
+	http_curRequest.progress = HTTP_PROGRESS_NOT_WORKING_ON;
 	/* Http component gets initialised multiple times on Android */
 	if (workerThread) return;
 
 	HttpBackend_Init();
-	workerWaitable = Waitable_Create();
 	RequestList_Init(&pendingReqs);
 	RequestList_Init(&processedReqs);
 
+	workerWaitable  = Waitable_Create();
 	pendingMutex    = Mutex_Create();
 	processedMutex  = Mutex_Create();
 	curRequestMutex = Mutex_Create();
-	workerThread    = Thread_Create(WorkerLoop);
-
-	Thread_Start2(workerThread, WorkerLoop);
+	
+	Thread_Run(&workerThread, WorkerLoop, 128 * 1024, "HTTP");
 }
 #endif

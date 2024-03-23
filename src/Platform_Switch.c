@@ -1,5 +1,5 @@
 #include "Core.h"
-#if defined CC_BUILD_3DS
+#if defined CC_BUILD_SWITCH
 #include "_PlatformBase.h"
 #include "Stream.h"
 #include "ExtMath.h"
@@ -7,59 +7,84 @@
 #include "Window.h"
 #include "Utils.h"
 #include "Errors.h"
-#include "PackedCol.h"
+#include "Options.h"
+#include <switch.h>
 
 #include <errno.h>
-#include <time.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/time.h>
+#include <sys/stat.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <poll.h>
-#include <stdio.h>
-#include <malloc.h>
 #include <netdb.h>
-#include <3ds.h>
-#include <citro3d.h>
 #include "_PlatformConsole.h"
 
-#define US_PER_SEC 1000000LL
-#define NS_PER_MS 1000000LL
 
-const cc_result ReturnCode_FileShareViolation = 1000000000; /* TODO: not used apparently */
+
+const cc_result ReturnCode_FileShareViolation = 1000000000; // not used
 const cc_result ReturnCode_FileNotFound     = ENOENT;
 const cc_result ReturnCode_SocketInProgess  = EINPROGRESS;
 const cc_result ReturnCode_SocketWouldBlock = EWOULDBLOCK;
 const cc_result ReturnCode_DirectoryExists  = EEXIST;
-const char* Platform_AppNameSuffix = " 3DS";
+const char* Platform_AppNameSuffix = " Switch";
 
-// https://gbatemp.net/threads/homebrew-development.360646/page-245
-// 3DS defaults to stack size of *32 KB*.. way too small
-unsigned int __stacksize__ = 256 * 1024;
+
+alignas(16) u8 __nx_exception_stack[0x1000];
+u64 __nx_exception_stack_size = sizeof(__nx_exception_stack);
+
+void __libnx_exception_handler(ThreadExceptionDump *ctx)
+{
+    int i;
+    FILE *f = fopen("sdmc:/exception_dump", "w");
+    if(f==NULL)return;
+
+    fprintf(f, "error_desc: 0x%x\n", ctx->error_desc);//You can also parse this with ThreadExceptionDesc.
+    //This assumes AArch64, however you can also use threadExceptionIsAArch64().
+    for(i=0; i<29; i++)fprintf(f, "[X%d]: 0x%lx\n", i, ctx->cpu_gprs[i].x);
+    fprintf(f, "fp: 0x%lx\n", ctx->fp.x);
+    fprintf(f, "lr: 0x%lx\n", ctx->lr.x);
+    fprintf(f, "sp: 0x%lx\n", ctx->sp.x);
+    fprintf(f, "pc: 0x%lx\n", ctx->pc.x);
+
+    //You could print fpu_gprs if you want.
+
+    fprintf(f, "pstate: 0x%x\n", ctx->pstate);
+    fprintf(f, "afsr0: 0x%x\n", ctx->afsr0);
+    fprintf(f, "afsr1: 0x%x\n", ctx->afsr1);
+    fprintf(f, "esr: 0x%x\n", ctx->esr);
+
+    fprintf(f, "far: 0x%lx\n", ctx->far.x);
+
+    fclose(f);
+}
 
 
 /*########################################################################################################################*
 *------------------------------------------------------Logging/Time-------------------------------------------------------*
 *#########################################################################################################################*/
-void Platform_Log(const char* msg, int len) {
-	//cc_file fd = -1;
-	// CITRA LOGGING
-	//cc_string path = String_Init(msg, len, len);
-	//File_Open(&fd, &path);
-	//if (fd > 0) File_Close(fd);
+cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
+	if (end < beg) return 0;
 	
-	write(STDOUT_FILENO, msg,  len);
-	write(STDOUT_FILENO, "\n",   1);
+	return (end - beg) / 1000;
+}
 
-	// output to debug service (visible in Citra with log level set to "Debug.Emulated:Debug", or on console via remote gdb)
+cc_uint64 Stopwatch_Measure(void) {
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return (cc_uint64)t.tv_sec * 1e9 + t.tv_nsec;
+}
+
+void Platform_Log(const char* msg, int len) {
 	svcOutputDebugString(msg, len);
-	svcOutputDebugString("\n", 1);
 }
 
 #define UnixTime_TotalMS(time) ((cc_uint64)time.tv_sec * 1000 + UNIX_EPOCH + (time.tv_usec / 1000))
@@ -83,24 +108,11 @@ void DateTime_CurrentLocal(struct DateTime* t) {
 	t->second = loc_time.tm_sec;
 }
 
-cc_uint64 Stopwatch_Measure(void) {
-	return svcGetSystemTick();
-}
-
-cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
-	if (end < beg) return 0;	
-	// TODO: This doesn't seem to accurately measure time in Citra.
-	// hopefully it works better on a real 3DS?
-	
-	// See CPU_TICKS_PER_USEC in libctru/include/3ds/os.h
-	return (end - beg) * US_PER_SEC / SYSCLOCK_ARM11;
-}
-
 
 /*########################################################################################################################*
 *-----------------------------------------------------Directory/File------------------------------------------------------*
 *#########################################################################################################################*/
-static const cc_string root_path = String_FromConst("sdmc:/3ds/ClassiCube/");
+static const cc_string root_path = String_FromConst("sdmc:/switch/ClassiCube/");
 
 static void GetNativePath(char* str, const cc_string* path) {
 	Mem_Copy(str, root_path.buffer, root_path.length);
@@ -111,15 +123,13 @@ static void GetNativePath(char* str, const cc_string* path) {
 cc_result Directory_Create(const cc_string* path) {
 	char str[NATIVE_STR_LEN];
 	GetNativePath(str, path);
-	
-	return mkdir(str, 0666) == -1 ? errno : 0; // FS has no permissions anyways
+	return mkdir(str, 0) == -1 ? errno : 0;
 }
 
 int File_Exists(const cc_string* path) {
 	char str[NATIVE_STR_LEN];
 	struct stat sb;
 	GetNativePath(str, path);
-	
 	return stat(str, &sb) == 0 && S_ISREG(sb.st_mode);
 }
 
@@ -127,27 +137,30 @@ cc_result Directory_Enum(const cc_string* dirPath, void* obj, Directory_EnumCall
 	cc_string path; char pathBuffer[FILENAME_SIZE];
 	char str[NATIVE_STR_LEN];
 	struct dirent* entry;
-	char* src;
-	int len, res, is_dir;
+	int res;
 
 	GetNativePath(str, dirPath);
 	DIR* dirPtr = opendir(str);
 	if (!dirPtr) return errno;
 
-	/* POSIX docs: "When the end of the directory is encountered, a null pointer is returned and errno is not changed." */
-	/* errno is sometimes leftover from previous calls, so always reset it before readdir gets called */
+	// POSIX docs: "When the end of the directory is encountered, a null pointer is returned and errno is not changed."
+	// errno is sometimes leftover from previous calls, so always reset it before readdir gets called
 	errno = 0;
 	String_InitArray(path, pathBuffer);
 
 	while ((entry = readdir(dirPtr))) {
 		path.length = 0;
 		String_Format1(&path, "%s/", dirPath);
-		src = entry->d_name;
 
-		len = String_Length(src);
+		// ignore . and .. entry
+		char* src = entry->d_name;
+		if (src[0] == '.' && src[1] == '\0') continue;
+		if (src[0] == '.' && src[1] == '.' && src[2] == '\0') continue;
+
+		int len = String_Length(src);
 		String_AppendUtf8(&path, src, len);
-		is_dir = entry->d_type == DT_DIR;
-		/* TODO: fallback to stat when this fails */
+		int is_dir = entry->d_type == DT_DIR;
+		// TODO: fallback to stat when this fails
 
 		if (is_dir) {
 			res = Directory_Enum(&path, obj, callback);
@@ -158,7 +171,7 @@ cc_result Directory_Enum(const cc_string* dirPath, void* obj, Directory_EnumCall
 		errno = 0;
 	}
 
-	res = errno; /* return code from readdir */
+	res = errno; // return code from readdir
 	closedir(dirPtr);
 	return res;
 }
@@ -166,8 +179,7 @@ cc_result Directory_Enum(const cc_string* dirPath, void* obj, Directory_EnumCall
 static cc_result File_Do(cc_file* file, const cc_string* path, int mode) {
 	char str[NATIVE_STR_LEN];
 	GetNativePath(str, path);
-
-	*file = open(str, mode, 0666); // FS has no permissions anyways
+	*file = open(str, mode, 0);
 	return *file == -1 ? errno : 0;
 }
 
@@ -215,34 +227,36 @@ cc_result File_Length(cc_file file, cc_uint32* len) {
 /*########################################################################################################################*
 *--------------------------------------------------------Threading--------------------------------------------------------*
 *#########################################################################################################################*/
-void Thread_Sleep(cc_uint32 milliseconds) { 
-	svcSleepThread(milliseconds * NS_PER_MS); 
+void Thread_Sleep(cc_uint32 milliseconds) {
+	cc_uint64 timeout_ns = milliseconds * (1000 * 1000); // to nanoseconds
+	svcSleepThread(timeout_ns);
 }
 
-static void Exec3DSThread(void* param) {
+static void ExecSwitchThread(void* param) {
 	((Thread_StartFunc)param)(); 
 }
 
 void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char* name) {
-	//TODO: Not quite correct, but eh
-	*handle = threadCreate(Exec3DSThread, (void*)func, stackSize, 0x3f, -2, false);
+	Thread* thread = (Thread*)Mem_Alloc(1, sizeof(Thread), name);
+	*handle = thread;
+
+	threadCreate(thread, ExecSwitchThread, (void*)func, NULL, stackSize, 0x2C, -2);
+	threadStart(thread);
 }
 
-void Thread_Detach(void* handle) {
-	Thread thread = (Thread)handle;
-	threadDetach(thread);
-}
+void Thread_Detach(void* handle) { }
 
 void Thread_Join(void* handle) {
-	Thread thread = (Thread)handle;
-	threadJoin(thread, U64_MAX);
-	threadFree(thread);
+	Thread* thread = (Thread*)handle;
+	threadWaitForExit(thread);
+	threadClose(thread);
+	Mem_Free(thread);
 }
 
 void* Mutex_Create(void) {
-	LightLock* lock = (LightLock*)Mem_Alloc(1, sizeof(LightLock), "mutex");
-	LightLock_Init(lock);
-	return lock;
+	Mutex* mutex = (Mutex*)Mem_Alloc(1, sizeof(Mutex), "mutex");
+	mutexInit(mutex);
+	return mutex;
 }
 
 void Mutex_Free(void* handle) {
@@ -250,62 +264,115 @@ void Mutex_Free(void* handle) {
 }
 
 void Mutex_Lock(void* handle) {
-	LightLock_Lock((LightLock*)handle);
+	mutexLock((Mutex*)handle);
 }
 
 void Mutex_Unlock(void* handle) {
-	LightLock_Unlock((LightLock*)handle);
+	mutexUnlock((Mutex*)handle);
 }
 
+
+struct WaitData {
+	CondVar cond;
+	Mutex mutex;
+	int signalled; // For when Waitable_Signal is called before Waitable_Wait
+};
+
 void* Waitable_Create(void) {
-	LightEvent* event = (LightEvent*)Mem_Alloc(1, sizeof(LightEvent), "waitable");
-	LightEvent_Init(event, RESET_ONESHOT);
-	return event;
+	struct WaitData* ptr = (struct WaitData*)Mem_Alloc(1, sizeof(struct WaitData), "waitable");
+	
+	mutexInit(&ptr->mutex);
+	condvarInit(&ptr->cond);
+
+	ptr->signalled = false;
+	return ptr;
 }
 
 void Waitable_Free(void* handle) {
-	Mem_Free(handle);
+	struct WaitData* ptr = (struct WaitData*)handle;
+	Mem_Free(ptr);
 }
 
 void Waitable_Signal(void* handle) {
-	LightEvent_Signal((LightEvent*)handle);
+	struct WaitData* ptr = (struct WaitData*)handle;
+
+	Mutex_Lock(&ptr->mutex);
+	condvarWakeOne(&ptr->cond);
+	Mutex_Unlock(&ptr->mutex);
+
+	ptr->signalled = true;
 }
 
 void Waitable_Wait(void* handle) {
-	LightEvent_Wait((LightEvent*)handle);
+	struct WaitData* ptr = (struct WaitData*)handle;
+
+	Mutex_Lock(&ptr->mutex);
+	if (!ptr->signalled) {
+		condvarWait(&ptr->cond, &ptr->mutex);
+	}
+	ptr->signalled = false;
+	Mutex_Unlock(&ptr->mutex);
 }
 
 void Waitable_WaitFor(void* handle, cc_uint32 milliseconds) {
-	s64 timeout_ns = milliseconds * (1000 * 1000); // milliseconds to nanoseconds
-	LightEvent_WaitTimeout((LightEvent*)handle, timeout_ns);
+	struct WaitData* ptr = (struct WaitData*)handle;
+
+	cc_uint64 timeout_ns = (cc_uint64)milliseconds * (1000 * 1000); // to nanoseconds
+
+	Mutex_Lock(&ptr->mutex);
+	if (!ptr->signalled) {
+		condvarWaitTimeout(&ptr->cond, &ptr->mutex, timeout_ns);
+	}
+	ptr->signalled = false;
+	Mutex_Unlock(&ptr->mutex);
+}
+/*
+
+void* Waitable_Create(void) {
+	LEvent* ptr = (LEvent*)Mem_Alloc(1, sizeof(LEvent), "waitable");
+	leventInit(ptr, false, true);
+	return ptr;
 }
 
+void Waitable_Free(void* handle) {
+	LEvent* ptr = (LEvent*)handle;
+	leventClear(ptr);
+	Mem_Free(ptr);
+}
+
+void Waitable_Signal(void* handle) {
+	//leventSignal((LEvent*)handle);
+}
+
+void Waitable_Wait(void* handle) {
+	leventWait((LEvent*)handle, UINT64_MAX);
+}
+
+void Waitable_WaitFor(void* handle, cc_uint32 milliseconds) {
+	cc_uint64 timeout_ns = milliseconds * (1000 * 1000); // to nanoseconds
+	leventWait((LEvent*)handle, timeout_ns);
+}
+*/
 
 /*########################################################################################################################*
 *---------------------------------------------------------Socket----------------------------------------------------------*
 *#########################################################################################################################*/
-cc_result Socket_ParseAddress(const cc_string* address, int port, cc_sockaddr* addrs, int* numValidAddrs) {
-	char str[NATIVE_STR_LEN];
+union SocketAddress {
+	struct sockaddr raw;
+	struct sockaddr_in  v4;
+	#ifdef AF_INET6
+	struct sockaddr_in6 v6;
+	struct sockaddr_storage total;
+	#endif
+};
+
+static cc_result ParseHost(const char* host, int port, cc_sockaddr* addrs, int* numValidAddrs) {
 	char portRaw[32]; cc_string portStr;
 	struct addrinfo hints = { 0 };
 	struct addrinfo* result;
 	struct addrinfo* cur;
-	int i = 0;
-	
-	String_EncodeUtf8(str, address);
-	*numValidAddrs = 0;
-	struct sockaddr_in* addr4 = (struct sockaddr_in*)addrs[0].data;
-	if (inet_aton(str, &addr4->sin_addr) > 0) {
-		// TODO eliminate this path?
-		addr4->sin_family = AF_INET;
-		addr4->sin_port   = htons(port);
-		
-		addrs[0].size  = sizeof(*addr4);
-		*numValidAddrs = 1;
-		return 0;
-	}
+	int res, i = 0;
 
-	hints.ai_family   = AF_INET; // TODO: you need this, otherwise resolving dl.dropboxusercontent.com crashes in Citra. probably something to do with IPv6 addresses
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 	
@@ -313,17 +380,23 @@ cc_result Socket_ParseAddress(const cc_string* address, int port, cc_sockaddr* a
 	String_AppendInt(&portStr, port);
 	portRaw[portStr.length] = '\0';
 
-	int res = getaddrinfo(str, portRaw, &hints, &result);
-	if (res == -NO_DATA) return SOCK_ERR_UNKNOWN_HOST;
+	res = getaddrinfo(host, portRaw, &hints, &result);
+	if (res == EAI_AGAIN) return SOCK_ERR_UNKNOWN_HOST;
 	if (res) return res;
 
-	for (cur = result; cur && i < SOCKET_MAX_ADDRS; cur = cur->ai_next, i++) 
+	/* Prefer IPv4 addresses first */
+	for (cur = result; cur && i < SOCKET_MAX_ADDRS; cur = cur->ai_next) 
 	{
-		if (!cur->ai_addrlen) break; 
-		// TODO citra returns empty addresses past first one? does that happen on real hardware too?
-		
+		if (cur->ai_family != AF_INET) continue;
 		Mem_Copy(addrs[i].data, cur->ai_addr, cur->ai_addrlen);
-		addrs[i].size = cur->ai_addrlen;
+		addrs[i].size = cur->ai_addrlen; i++;
+	}
+	
+	for (cur = result; cur && i < SOCKET_MAX_ADDRS; cur = cur->ai_next) 
+	{
+		if (cur->ai_family == AF_INET) continue;
+		Mem_Copy(addrs[i].data, cur->ai_addr, cur->ai_addrlen);
+		addrs[i].size = cur->ai_addrlen; i++;
 	}
 
 	freeaddrinfo(result);
@@ -331,16 +404,46 @@ cc_result Socket_ParseAddress(const cc_string* address, int port, cc_sockaddr* a
 	return i == 0 ? ERR_INVALID_ARGUMENT : 0;
 }
 
+cc_result Socket_ParseAddress(const cc_string* address, int port, cc_sockaddr* addrs, int* numValidAddrs) {
+	union SocketAddress* addr = (union SocketAddress*)addrs[0].data;
+	char str[NATIVE_STR_LEN];
+
+	String_EncodeUtf8(str, address);
+	*numValidAddrs = 0;
+
+	if (inet_pton(AF_INET,  str, &addr->v4.sin_addr)  > 0) {
+		addr->v4.sin_family = AF_INET;
+		addr->v4.sin_port   = htons(port);
+		
+		addrs[0].size  = sizeof(addr->v4);
+		*numValidAddrs = 1;
+		return 0;
+	}
+	
+	#ifdef AF_INET6
+	if (inet_pton(AF_INET6, str, &addr->v6.sin6_addr) > 0) {
+		addr->v6.sin6_family = AF_INET6;
+		addr->v6.sin6_port   = htons(port);
+		
+		addrs[0].size  = sizeof(addr->v6);
+		*numValidAddrs = 1;
+		return 0;
+	}
+	#endif
+	
+	return ParseHost(str, port, addrs, numValidAddrs);
+}
+
 cc_result Socket_Connect(cc_socket* s, cc_sockaddr* addr, cc_bool nonblocking) {
 	struct sockaddr* raw = (struct sockaddr*)addr->data;
-	int res;
+	cc_result res;
 
-	*s = socket(raw->sa_family, SOCK_STREAM, 0); // https://www.3dbrew.org/wiki/SOCU:socket
+	*s = socket(raw->sa_family, SOCK_STREAM, IPPROTO_TCP);
 	if (*s == -1) return errno;
-	
+
 	if (nonblocking) {
-		int flags = fcntl(*s, F_GETFL, 0);
-		if (flags >= 0) fcntl(*s, F_SETFL, flags | O_NONBLOCK);
+		int blocking_raw = -1; /* non-blocking mode */
+		ioctl(*s, FIONBIO, &blocking_raw);
 	}
 
 	res = connect(*s, raw, addr->size);
@@ -356,7 +459,6 @@ cc_result Socket_Read(cc_socket s, cc_uint8* data, cc_uint32 count, cc_uint32* m
 cc_result Socket_Write(cc_socket s, const cc_uint8* data, cc_uint32 count, cc_uint32* modified) {
 	int sentCount = send(s, data, count, 0);
 	if (sentCount != -1) { *modified = sentCount; return 0; }
-	
 	*modified = 0; return errno;
 }
 
@@ -367,15 +469,15 @@ void Socket_Close(cc_socket s) {
 
 static cc_result Socket_Poll(cc_socket s, int mode, cc_bool* success) {
 	struct pollfd pfd;
+	int flags;
 
 	pfd.fd     = s;
 	pfd.events = mode == SOCKET_POLL_READ ? POLLIN : POLLOUT;
 	if (poll(&pfd, 1, 0) == -1) { *success = false; return errno; }
 	
 	/* to match select, closed socket still counts as readable */
-	int flags = mode == SOCKET_POLL_READ ? (POLLIN | POLLHUP) : POLLOUT;
-	*success  = (pfd.revents & flags) != 0;
-	
+	flags    = mode == SOCKET_POLL_READ ? (POLLIN | POLLHUP) : POLLOUT;
+	*success = (pfd.revents & flags) != 0;
 	return 0;
 }
 
@@ -388,12 +490,8 @@ cc_result Socket_CheckWritable(cc_socket s, cc_bool* writable) {
 	cc_result res = Socket_Poll(s, SOCKET_POLL_WRITE, writable);
 	if (res || *writable) return res;
 
-	// Actual 3DS hardware returns INPROGRESS error code if connect is still in progress
-	// Which is different from POSIX:
-	//   https://stackoverflow.com/questions/29479953/so-error-value-after-successful-socket-operation
+	/* https://stackoverflow.com/questions/29479953/so-error-value-after-successful-socket-operation */
 	getsockopt(s, SOL_SOCKET, SO_ERROR, &res, &resultSize);
-	Platform_Log1("--write poll failed-- = %i", &res);
-	if (res == -26) res = 0;
 	return res;
 }
 
@@ -401,38 +499,23 @@ cc_result Socket_CheckWritable(cc_socket s, cc_bool* writable) {
 /*########################################################################################################################*
 *--------------------------------------------------------Platform---------------------------------------------------------*
 *#########################################################################################################################*/
-#define SOC_CTX_ALIGN 0x1000
-#define SOC_CTX_SIZE  0x1000 * 128
-
-static void CreateRootDirectory(const char* path) {
-	// create root directories (no permissions anyways)
-	int res = mkdir(path, 0666);
-	if (res >= 0) return;
-	
-	int err = errno;
-	Platform_Log2("mkdir %c FAILED: %i", path, &err);
+static void CreateRootDirectory(void) {
+	mkdir("sdmc:/switch", 0);
+	int res = mkdir(root_path.buffer, 0);
+	int err = res == -1 ? errno : 0;
+	Platform_Log1("Created root directory: %i", &err);
 }
 
 void Platform_Init(void) {
-	// Take full advantage of new 3DS if running on it
-	osSetSpeedupEnable(true);
-	
-	// create root directories (no permissions anyways)
-	CreateRootDirectory("sdmc:/3ds");
-	CreateRootDirectory("sdmc:/3ds/ClassiCube");
-	
-	// See https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/services/soc.h
-	//  * @param context_addr Address of a page-aligned (0x1000) buffer to be used.
-	//  * @param context_size Size of the buffer, a multiple of 0x1000.
-	//  * @note The specified context buffer can no longer be accessed by the process which called this function, since the userland permissions for this block are set to no-access.
-	void* buffer = memalign(SOC_CTX_ALIGN, SOC_CTX_SIZE);
-	if (!buffer) return;
-	socInit(buffer, SOC_CTX_SIZE);
+	// TODO: Redesign Drawer2D to better handle this
+	//Options_SetBool(OPT_USE_CHAT_FONT, true);
+
+	CreateRootDirectory();
+	socketInitializeDefault();
 }
 
 void Platform_Free(void) {
-	socExit();
-	// TODO free soc buffer? probably no point
+	socketExit();
 }
 
 cc_bool Platform_DescribeError(cc_result res, cc_string* dst) {
@@ -457,8 +540,6 @@ cc_bool Platform_DescribeError(cc_result res, cc_string* dst) {
 *-------------------------------------------------------Encryption--------------------------------------------------------*
 *#########################################################################################################################*/
 static cc_result GetMachineID(cc_uint32* key) {
-	// doesn't really matter if called multiple times
-	psInit();
-	return PS_GetDeviceId(key);
+	return ERR_NOT_SUPPORTED;
 }
 #endif

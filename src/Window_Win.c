@@ -322,7 +322,7 @@ static ATOM DoRegisterClass(void) {
 			GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
 	wc.hIconSm = (HICON)LoadImageA(win_instance, MAKEINTRESOURCEA(1), IMAGE_ICON,
 			GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
-	wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
+	wc.hCursor = LoadCursorA(NULL, (LPCSTR)IDC_ARROW);
 
 	if ((atom = RegisterClassExW(&wc))) return atom;
 	/* Windows 9x does not support W API functions */
@@ -683,7 +683,7 @@ void Window_AllocFramebuffer(struct Bitmap* bmp) {
 	if (!draw_DIB) Logger_Abort2(GetLastError(), "Failed to create DIB");
 }
 
-void Window_DrawFramebuffer(Rect2D r) {
+void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
 	HGDIOBJ oldSrc = SelectObject(draw_DC, draw_DIB);
 	BitBlt(win_DC, r.x, r.y, r.Width, r.Height, draw_DC, r.x, r.y, SRCCOPY);
 	SelectObject(draw_DC, oldSrc);

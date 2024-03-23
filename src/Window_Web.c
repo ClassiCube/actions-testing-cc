@@ -7,6 +7,7 @@
 #include "ExtMath.h"
 #include "Bitmap.h"
 #include "Errors.h"
+#include "Gui.h"
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 #include <emscripten/key_codes.h>
@@ -382,6 +383,7 @@ void Window_Init(void) {
 	droid  = interop_IsAndroid();
 	is_ios = interop_IsIOS();
 	Input_SetTouchMode(is_ios || droid);
+	Gui_SetTouchUI(is_ios || droid);
 
 	/* iOS shifts the whole webpage up when opening chat, which causes problems */
 	/*  as the chat/send butons are positioned at the top of the canvas - they */
@@ -561,7 +563,7 @@ static void ProcessGamepadCamera(float x, float y, double delta) {
 	if (y >= -0.1 && y <= 0.1) y = 0;
 	if (x == 0 && y == 0) return;
 
-	Event_RaiseRawMove(&PointerEvents.RawMoved, x * scale, y * scale);
+	Event_RaiseRawMove(&ControllerEvents.RawMoved, x * scale, y * scale);
 }
 
 static void ProcessGamepadMovement(float x, float y) {
@@ -669,7 +671,7 @@ cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
 }
 
 void Window_AllocFramebuffer(struct Bitmap* bmp) { }
-void Window_DrawFramebuffer(Rect2D r)     { }
+void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) { }
 void Window_FreeFramebuffer(struct Bitmap* bmp)  { }
 
 extern void interop_OpenKeyboard(const char* text, int type, const char* placeholder);

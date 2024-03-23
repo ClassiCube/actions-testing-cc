@@ -118,7 +118,7 @@ typedef cc_uint8  cc_bool;
 #endif
 
 
-//#define CC_BUILD_FREETYPE
+#undef CC_BUILD_FREETYPE
 #ifndef CC_BUILD_FLATPAK
 #define CC_BUILD_RESOURCES
 #endif
@@ -192,12 +192,8 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_IOS
 	#define CC_BUILD_TOUCH
 	#define CC_BUILD_CFNETWORK
-	#elif defined __x86_64__ || defined __arm64__
-	#define CC_BUILD_COCOA
-	#define CC_BUILD_MACOS
-	#define CC_BUILD_CURL
 	#else
-	#define CC_BUILD_CARBON
+	#define CC_BUILD_COCOA
 	#define CC_BUILD_MACOS
 	#define CC_BUILD_CURL
 	#endif
@@ -276,6 +272,7 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_PSP
 	#define CC_BUILD_OPENAL
 	#define CC_BUILD_HTTPCLIENT
+	#define CC_BUILD_COOPTHREADED
 	#define CC_BUILD_BEARSSL
 	#define CC_BUILD_LOWMEM
 	#define CC_BUILD_CONSOLE
@@ -286,6 +283,8 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_BEARSSL
 	#define CC_BUILD_LOWMEM
 	#define CC_BUILD_CONSOLE
+	#define CC_BUILD_TOUCH
+	#define CC_BUILD_DUALSCREEN
 	#undef  CC_BUILD_FREETYPE
 #elif defined GEKKO
 	#define CC_BUILD_GCWII
@@ -338,6 +337,37 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_COOPTHREADED
 	#define CC_BUILD_LOWMEM
 	#define CC_BUILD_CONSOLE
+	#undef  CC_BUILD_FREETYPE
+#elif defined PLAT_NDS
+	#define CC_BUILD_NDS
+	#define CC_BUILD_NOMUSIC
+	#define CC_BUILD_NOSOUNDS
+	#define CC_BUILD_HTTPCLIENT
+	#define CC_BUILD_COOPTHREADED
+	#define CC_BUILD_LOWMEM
+	#define CC_BUILD_CONSOLE
+	#define CC_BUILD_TOUCH
+	#undef  CC_BUILD_FREETYPE
+	#undef  CC_BUILD_RESOURCES
+#elif defined __WIIU__
+	#define CC_BUILD_WIIU
+	#define CC_BUILD_OPENAL
+	#define CC_BUILD_HTTPCLIENT
+	#define CC_BUILD_COOPTHREADED
+	#define CC_BUILD_LOWMEM
+	#define CC_BUILD_BEARSSL
+	#define CC_BUILD_CONSOLE
+	#undef  CC_BUILD_FREETYPE
+#elif defined __SWITCH__
+	#define CC_BUILD_SWITCH
+	#define CC_BUILD_HTTPCLIENT
+	#define CC_BUILD_BEARSSL
+	#define CC_BUILD_CONSOLE
+	#define CC_BUILD_TOUCH
+	#define CC_BUILD_GL
+	#define CC_BUILD_GLMODERN
+	#define CC_BUILD_GLES
+	#define CC_BUILD_EGL
 	#undef  CC_BUILD_FREETYPE
 #endif
 #endif

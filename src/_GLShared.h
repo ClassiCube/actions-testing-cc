@@ -178,13 +178,13 @@ static void GL_ClearColor(PackedCol color) {
 	glClearColor(PackedCol_R(color) / 255.0f, PackedCol_G(color) / 255.0f,
 				 PackedCol_B(color) / 255.0f, PackedCol_A(color) / 255.0f);
 }
-void Gfx_ClearCol(PackedCol color) {
+void Gfx_ClearColor(PackedCol color) {
 	if (color == gfx_clearColor) return;
 	GL_ClearColor(color);
 	gfx_clearColor = color;
 }
 
-void Gfx_SetColWriteMask(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
+static void SetColorWrite(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
 	glColorMask(r, g, b, a);
 }
 
@@ -297,7 +297,13 @@ void Gfx_SetFpsLimit(cc_bool vsync, float minFrameMs) {
 }
 
 void Gfx_BeginFrame(void) { }
-void Gfx_Clear(void) { glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); }
+void Gfx_ClearBuffers(GfxBuffers buffers) {
+	int targets = 0;
+	if (buffers & GFX_BUFFER_COLOR) targets |= GL_COLOR_BUFFER_BIT;
+	if (buffers & GFX_BUFFER_DEPTH) targets |= GL_DEPTH_BUFFER_BIT;
+	
+	glClear(targets); 
+}
 
 void Gfx_EndFrame(void) {
 #ifndef CC_BUILD_GLMODERN
@@ -320,6 +326,6 @@ void Gfx_OnWindowResize(void) {
 	/* Normally this doesn't matter, but it does when game is compiled against recent */
 	/*  macOS SDK *and* the display is a high DPI display - where glViewport(width, height) */
 	/*  above would otherwise result in game rendering to only 1/4 of the screen */
-	/*  https://github.com/UnknownShadow200/ClassiCube/issues/888 */
+	/*  https://github.com/ClassiCube/ClassiCube/issues/888 */
 	GLContext_Update();
 }

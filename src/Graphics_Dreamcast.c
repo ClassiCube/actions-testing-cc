@@ -17,10 +17,12 @@ static cc_bool renderingDisabled;
 *#########################################################################################################################*/
 void Gfx_Create(void) {
 	if (!Gfx.Created) glKosInit();
-	// NOTE: technically 1024 is supported by hardware
-	Gfx.MaxTexWidth  = 512;
-	Gfx.MaxTexHeight = 512;
+	
+	Gfx.MaxTexWidth  = 1024;
+	Gfx.MaxTexHeight = 1024;
+	Gfx.MaxTexSize   = 512 * 512; // reasonable cap as Dreamcast only has 8MB VRAM
 	Gfx.Created      = true;
+	
 	Gfx_RestoreState();
 }
 
@@ -43,7 +45,7 @@ void Gfx_SetFaceCulling(cc_bool enabled)   { gl_Toggle(GL_CULL_FACE); }
 void Gfx_SetAlphaBlending(cc_bool enabled) { gl_Toggle(GL_BLEND); }
 void Gfx_SetAlphaArgBlend(cc_bool enabled) { }
 
-void Gfx_ClearCol(PackedCol color) {
+void Gfx_ClearColor(PackedCol color) {
 	if (color == gfx_clearColor) return;
 	gfx_clearColor = color;
 	
@@ -53,7 +55,7 @@ void Gfx_ClearCol(PackedCol color) {
 	pvr_set_bg_color(r, g, b); // TODO: not working ?
 }
 
-void Gfx_SetColWriteMask(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
+static void SetColorWrite(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
 	// TODO: Doesn't work
 }
 
@@ -529,7 +531,9 @@ void Gfx_SetFpsLimit(cc_bool vsync, float minFrameMs) {
 }
 
 void Gfx_BeginFrame(void) { }
-void Gfx_Clear(void) {
+
+void Gfx_ClearBuffers(GfxBuffers buffers) {
+	// TODO clear only some buffers
 	// no need to use glClear
 }
 

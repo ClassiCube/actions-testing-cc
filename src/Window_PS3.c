@@ -277,7 +277,7 @@ static void HandleJoystick_Right(int x, int y, double delta) {
 	if (Math_AbsI(x) <= 32) x = 0;
 	if (Math_AbsI(y) <= 32) y = 0;
 	
-	Event_RaiseRawMove(&PointerEvents.RawMoved, x * scale, y * scale);	
+	Event_RaiseRawMove(&ControllerEvents.RawMoved, x * scale, y * scale);	
 }
 
 static void ProcessPadInput(double delta, padData* pad) {
@@ -318,7 +318,6 @@ void Window_DisableRawMouse(void) { Input.RawMode = false; }
 /*########################################################################################################################*
 *------------------------------------------------------Framebuffer--------------------------------------------------------*
 *#########################################################################################################################*/
-static struct Bitmap fb_bmp;
 static u32 fb_offset;
 
 extern u32* Gfx_AllocImage(u32* offset, s32 w, s32 h);
@@ -327,17 +326,16 @@ extern void Gfx_TransferImage(u32 offset, s32 w, s32 h);
 void Window_AllocFramebuffer(struct Bitmap* bmp) {
 	u32* pixels = Gfx_AllocImage(&fb_offset, bmp->width, bmp->height);
 	bmp->scan0  = pixels;
-	fb_bmp      = *bmp;
 	
-	Gfx_ClearCol(PackedCol_Make(0x40, 0x60, 0x80, 0xFF));
+	Gfx_ClearColor(PackedCol_Make(0x40, 0x60, 0x80, 0xFF));
 }
 
-void Window_DrawFramebuffer(Rect2D r) {
+void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
 	// TODO test
 	Gfx_BeginFrame();
-	Gfx_Clear();
+	Gfx_ClearBuffers(GFX_BUFFER_COLOR | GFX_BUFFER_DEPTH);
 	// TODO: Only transfer dirty region instead of the entire bitmap
-	Gfx_TransferImage(fb_offset, fb_bmp.width, fb_bmp.height);
+	Gfx_TransferImage(fb_offset, bmp->width, bmp->height);
 	Gfx_EndFrame();
 }
 

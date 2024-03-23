@@ -125,7 +125,7 @@ static void HandleJoystick_Right(int x, int y, double delta) {
 	if (Math_AbsI(x) <= 8) x = 0;
 	if (Math_AbsI(y) <= 8) y = 0;
 	
-	Event_RaiseRawMove(&PointerEvents.RawMoved, x * scale, y * scale);	
+	Event_RaiseRawMove(&ControllerEvents.RawMoved, x * scale, y * scale);	
 }
 
 static void ProcessPadInput(double delta, struct padButtonStatus* pad) {
@@ -163,7 +163,6 @@ void Window_DisableRawMouse(void) { Input.RawMode = false; }
 *------------------------------------------------------Framebuffer--------------------------------------------------------*
 *#########################################################################################################################*/
 static framebuffer_t win_fb;
-static struct Bitmap fb_bmp;
 
 void Window_Create2D(int width, int height) {
 	ResetGfxState();
@@ -180,10 +179,9 @@ void Window_Create2D(int width, int height) {
 
 void Window_AllocFramebuffer(struct Bitmap* bmp) {
 	bmp->scan0 = (BitmapCol*)Mem_Alloc(bmp->width * bmp->height, 4, "window pixels");
-	fb_bmp     = *bmp;
 }
 
-void Window_DrawFramebuffer(Rect2D r) {
+void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
 	// FlushCache bios call https://psi-rockin.github.io/ps2tek/
 	//   mode=0: Flush data cache (invalidate+writeback dirty contents to memory)
 	FlushCache(0);
@@ -191,7 +189,7 @@ void Window_DrawFramebuffer(Rect2D r) {
 	packet_t* packet = packet_init(50,PACKET_NORMAL);
 	qword_t* q = packet->data;
 
-	q = draw_texture_transfer(q, fb_bmp.scan0, fb_bmp.width, fb_bmp.height, GS_PSM_32, 
+	q = draw_texture_transfer(q, bmp->scan0, bmp->width, bmp->height, GS_PSM_32, 
 								 win_fb.address, win_fb.width);
 	q = draw_texture_flush(q);
 

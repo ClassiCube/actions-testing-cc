@@ -639,7 +639,6 @@ static void GPUTexture_Free(struct GPUTexture* tex) {
 
 static void GPUTextures_DeleteUnreferenced(void) {
 	if (!del_textures_head) return;
-	del_textures_tail = NULL;
 	
 	struct GPUTexture* tex;
 	struct GPUTexture* next;
@@ -651,15 +650,15 @@ static void GPUTextures_DeleteUnreferenced(void) {
 		
 		if (tex->lastFrame + 4 > frameCounter) {
 			// texture was used within last 4 fames
-			prev              = tex;
-			del_textures_tail = tex; // update end of linked list
-			
-			cc_uintptr addr = tex;
-			Platform_Log1("TEX CHECK %h", &addr);
+			prev = tex;
 		} else {
 			// advance the head of the linked list
 			if (del_textures_head == tex) 
 				del_textures_head = next;
+
+			// update end of linked list if necessary
+			if (del_textures_tail == tex)
+				del_textures_tail = prev;
 			
 			// unlink this texture from the linked list
 			if (prev) prev->next = next;
@@ -866,7 +865,6 @@ static void GPUBuffer_Free(struct GPUBuffer* buf) {
 
 static void GPUBuffers_DeleteUnreferenced(void) {
 	if (!del_buffers_head) return;
-	del_buffers_tail = NULL;
 	
 	struct GPUBuffer* buf;
 	struct GPUBuffer* next;
@@ -878,15 +876,15 @@ static void GPUBuffers_DeleteUnreferenced(void) {
 		
 		if (buf->lastFrame + 4 > frameCounter) {
 			// texture was used within last 4 fames
-			prev             = buf;
-			del_buffers_tail = buf; // update end of linked list
-			
-			cc_uintptr addr = buf;
-			Platform_Log1("VB CHECK %h", &addr);
+			prev = buf;
 		} else {
 			// advance the head of the linked list
 			if (del_buffers_head == buf) 
 				del_buffers_head = next;
+
+			// update end of linked list if necessary
+			if (del_buffers_tail == buf)
+				del_buffers_tail = prev;
 			
 			// unlink this texture from the linked list
 			if (prev) prev->next = next;
@@ -1002,11 +1000,11 @@ void Gfx_SetFaceCulling(cc_bool enabled) {
 void Gfx_SetAlphaArgBlend(cc_bool enabled) { }
 
 static PackedCol clear_color;
-void Gfx_ClearCol(PackedCol color) {
+void Gfx_ClearColor(PackedCol color) {
 	clear_color = color;
 }
 
-void Gfx_SetColWriteMask(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
+static void SetColorWrite(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
  // TODO
 }
 
@@ -1119,7 +1117,8 @@ void Gfx_DrawIndexedTris_T2fC4b(int verticesCount, int startVertex) {
 }
 
 
-void Gfx_Clear(void) {
+void Gfx_ClearBuffers(GfxBuffers buffers) {
+	// TODO clear only some buffers
 	static struct GPUBuffer* clearVB;
 	if (!clearVB) {
 		clearVB = GPUBuffer_Alloc(4 * sizeof(struct VertexColoured));

@@ -1,5 +1,5 @@
 #include "Core.h"
-#if defined CC_BUILD_PSP
+#if defined CC_BUILD_NDS
 #include "Window.h"
 #include "Platform.h"
 #include "Input.h"
@@ -10,36 +10,39 @@
 #include "Bitmap.h"
 #include "Errors.h"
 #include "ExtMath.h"
-#include <pspdisplay.h>
-#include <pspge.h>
-#include <pspctrl.h>
-#include <pspkernel.h>
+#include <nds/arm9/background.h>
+#include <nds/arm9/input.h>
+#include <nds/arm9/console.h>
+#include <nds/arm9/keyboard.h>
 
-#define BUFFER_WIDTH  512
-#define SCREEN_WIDTH  480
-#define SCREEN_HEIGHT 272
-static cc_bool launcherMode;
+static cc_bool launcherMode, keyboardOpen;
+static int bg_id;
+static u16* bg_ptr;
 
 struct _DisplayData DisplayInfo;
 struct _WindowData WindowInfo;
 
-void Window_Init(void) {
+void Window_Init(void) {  
 	DisplayInfo.Width  = SCREEN_WIDTH;
 	DisplayInfo.Height = SCREEN_HEIGHT;
 	DisplayInfo.Depth  = 4; // 32 bit
-	DisplayInfo.ScaleX = 1;
-	DisplayInfo.ScaleY = 1;
+	DisplayInfo.ScaleX = 0.5f;
+	DisplayInfo.ScaleY = 0.5f;
 	
-	Window_Main.Width   = SCREEN_WIDTH;
-	Window_Main.Height  = SCREEN_HEIGHT;
+	Window_Main.Width   = DisplayInfo.Width;
+	Window_Main.Height  = DisplayInfo.Height;
 	Window_Main.Focused = true;
 	Window_Main.Exists  = true;
 
+	Input_SetTouchMode(true);
 	Input.Sources = INPUT_SOURCE_GAMEPAD;
-	sceCtrlSetSamplingCycle(0);
-	sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 	
-	sceDisplaySetMode(0, SCREEN_WIDTH, SCREEN_HEIGHT);
+	consoleDemoInit();
+	videoSetMode(MODE_5_2D);
+	vramSetBankA(VRAM_A_MAIN_BG);
+	
+	bg_id  = bgInit(2, BgType_Bmp16, BgSize_B16_256x256, 0, 0);
+	bg_ptr = bgGetGfxPtr(bg_id);
 }
 
 void Window_Free(void) { }
@@ -68,49 +71,58 @@ void Window_RequestClose(void) {
 *----------------------------------------------------Input processing-----------------------------------------------------*
 *#########################################################################################################################*/
 static void HandleButtons(int mods) {
-	Input_SetNonRepeatable(CCPAD_L, mods & PSP_CTRL_LTRIGGER);
-	Input_SetNonRepeatable(CCPAD_R, mods & PSP_CTRL_RTRIGGER);
+	Input_SetNonRepeatable(CCPAD_L, mods & KEY_L);
+	Input_SetNonRepeatable(CCPAD_R, mods & KEY_R);
 	
-	Input_SetNonRepeatable(CCPAD_A, mods & PSP_CTRL_TRIANGLE);
-	Input_SetNonRepeatable(CCPAD_B, mods & PSP_CTRL_SQUARE);
-	Input_SetNonRepeatable(CCPAD_X, mods & PSP_CTRL_CROSS);
-	Input_SetNonRepeatable(CCPAD_Y, mods & PSP_CTRL_CIRCLE);
+	Input_SetNonRepeatable(CCPAD_A, mods & KEY_A);
+	Input_SetNonRepeatable(CCPAD_B, mods & KEY_B);
+	Input_SetNonRepeatable(CCPAD_X, mods & KEY_X);
+	Input_SetNonRepeatable(CCPAD_Y, mods & KEY_Y);
 	
-	Input_SetNonRepeatable(CCPAD_START,  mods & PSP_CTRL_START);
-	Input_SetNonRepeatable(CCPAD_SELECT, mods & PSP_CTRL_SELECT);
+	Input_SetNonRepeatable(CCPAD_START,  mods & KEY_START);
+	Input_SetNonRepeatable(CCPAD_SELECT, mods & KEY_SELECT);
 	
-	Input_SetNonRepeatable(CCPAD_LEFT,   mods & PSP_CTRL_LEFT);
-	Input_SetNonRepeatable(CCPAD_RIGHT,  mods & PSP_CTRL_RIGHT);
-	Input_SetNonRepeatable(CCPAD_UP,     mods & PSP_CTRL_UP);
-	Input_SetNonRepeatable(CCPAD_DOWN,   mods & PSP_CTRL_DOWN);
+	Input_SetNonRepeatable(CCPAD_LEFT,   mods & KEY_LEFT);
+	Input_SetNonRepeatable(CCPAD_RIGHT,  mods & KEY_RIGHT);
+	Input_SetNonRepeatable(CCPAD_UP,     mods & KEY_UP);
+	Input_SetNonRepeatable(CCPAD_DOWN,   mods & KEY_DOWN);
 }
 
-static void ProcessCircleInput(SceCtrlData* pad, double delta) {
-	float scale = (delta * 60.0) / 16.0f;
-	int dx = pad->Lx - 127;
-	int dy = pad->Ly - 127;
-
-	if (Math_AbsI(dx) <= 8) dx = 0;
-	if (Math_AbsI(dy) <= 8) dy = 0;
-
-	Event_RaiseRawMove(&ControllerEvents.RawMoved, dx * scale, dy * scale);
+// Copied from Window_3DS.c
+static void ProcessTouchInput(int mods) {
+	static int curX, curY;  // current touch position
+	touchPosition touch;
+	touchRead(&touch);
+	
+	if (keysDown() & KEY_TOUCH) {  // stylus went down
+		curX = touch.px;
+		curY = touch.py;
+		Input_AddTouch(0, curX, curY);
+	} else if (mods & KEY_TOUCH) {  // stylus is down
+		curX = touch.px;
+		curY = touch.py;
+		Input_UpdateTouch(0, curX, curY);
+	} else if (keysUp() & KEY_TOUCH) {  // stylus was lifted
+		Input_RemoveTouch(0, curX, curY);
+	}
 }
 
 void Window_ProcessEvents(double delta) {
-	SceCtrlData pad;
-	/* TODO implement */
-	int ret = sceCtrlPeekBufferPositive(&pad, 1);
-	if (ret <= 0) return;
-	// TODO: need to use cached version still? like GameCube/Wii
-
-	HandleButtons(pad.Buttons);
-	if (Input.RawMode) 
-		ProcessCircleInput(&pad, delta);
+	scanKeys();	
+	int keys = keysDown() | keysHeld();
+	HandleButtons(keys);
+	
+    if (keyboardOpen) {
+        keyboardUpdate();
+    } else {
+	    ProcessTouchInput(keys);
+    }
 }
 
 void Cursor_SetPosition(int x, int y) { } // Makes no sense for PSP
 void Window_EnableRawMouse(void)  { Input.RawMode = true;  }
 void Window_DisableRawMouse(void) { Input.RawMode = false; }
+
 void Window_UpdateRawMouse(void)  { }
 
 
@@ -122,19 +134,24 @@ void Window_AllocFramebuffer(struct Bitmap* bmp) {
 }
 
 void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
-	void* fb = sceGeEdramGetAddr();
-	
-	sceDisplayWaitVblankStart();
-	sceDisplaySetFrameBuf(fb, BUFFER_WIDTH, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTFRAME);
-
-	cc_uint32* src = (cc_uint32*)bmp->scan0 + r.x;
-	cc_uint32* dst = (cc_uint32*)fb         + r.x;
-
-	for (int y = r.y; y < r.y + r.Height; y++) 
+	swiWaitForVBlank();
+	 
+	for (int y = r.y; y < r.y + r.Height; y++)
 	{
-		Mem_Copy(dst + y * BUFFER_WIDTH, src + y * bmp->width, r.Width * 4);
+		BitmapCol* src = Bitmap_GetRow(bmp, y);
+		uint16_t*  dst = bg_ptr + 256 * y;
+		
+		for (int x = r.x; x < r.x + r.Width; x++)
+		{
+			BitmapCol color = src[x];
+			// 888 to 565 (discard least significant bits)
+			// quoting libDNS: < Bitmap background with 16 bit color values of the form aBBBBBGGGGGRRRRR (if 'a' is not set, the pixel will be transparent)
+			dst[x] = 0x8000 | ((BitmapCol_B(color) & 0xF8) << 7) | ((BitmapCol_G(color) & 0xF8) << 2) | (BitmapCol_R(color) >> 3);
+		}
 	}
-	sceKernelDcacheWritebackAll();
+	
+	bgShow(bg_id);
+    bgUpdate();
 }
 
 void Window_FreeFramebuffer(struct Bitmap* bmp) {
@@ -145,9 +162,36 @@ void Window_FreeFramebuffer(struct Bitmap* bmp) {
 /*########################################################################################################################*
 *------------------------------------------------------Soft keyboard------------------------------------------------------*
 *#########################################################################################################################*/
-void Window_OpenKeyboard(struct OpenKeyboardArgs* args) { /* TODO implement */ }
+static char kbBuffer[NATIVE_STR_LEN + 1];
+static cc_string kbText;
+
+static void OnKeyPressed(int key) {
+    if (key == 0 || key == DVK_ENTER) {
+        Window_CloseKeyboard();
+    } else if (key == DVK_BACKSPACE) {
+        if (kbText.length) kbText.length--;
+        Event_RaiseString(&InputEvents.TextChanged, &kbText);     
+    } else if (key > 0) {
+        String_Append(&kbText, key);
+        Event_RaiseString(&InputEvents.TextChanged, &kbText);
+    }
+}
+
+void Window_OpenKeyboard(struct OpenKeyboardArgs* args) { 
+    Keyboard* kbd = keyboardDemoInit();
+    kbd->OnKeyPressed = OnKeyPressed;
+    keyboardShow();
+
+    String_InitArray(kbText, kbBuffer);
+    keyboardOpen = true;
+}
+
 void Window_SetKeyboardText(const cc_string* text) { }
-void Window_CloseKeyboard(void) { /* TODO implement */ }
+
+void Window_CloseKeyboard(void) {
+    keyboardHide();
+    keyboardOpen = false;
+}
 
 
 /*########################################################################################################################*

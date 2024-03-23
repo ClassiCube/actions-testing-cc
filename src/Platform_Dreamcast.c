@@ -17,7 +17,11 @@
 #include <sys/socket.h>
 #include <poll.h>
 #include <time.h>
+#include <ppp/ppp.h>
 #include <kos.h>
+#include <dc/sd.h>
+#include <fat/fs_fat.h>
+#include <kos/dbgio.h>
 #include "_PlatformConsole.h"
 KOS_INIT_FLAGS(INIT_DEFAULT | INIT_NET);
 
@@ -41,16 +45,47 @@ cc_uint64 Stopwatch_Measure(void) {
 	return timer_us_gettime64();
 }
 
+static uint32 str_offset;
+extern cc_bool window_inited;
+#define MAX_ONSCREEN_LINES 20
+
+static void LogOnscreen(const char* msg, int len) {
+	char buffer[50];
+	cc_string str;
+	uint32 secs, ms;
+	timer_ms_gettime(&secs, &ms);
+	
+	String_InitArray_NT(str, buffer);
+	String_Format2(&str, "[%p2.%p3] ", &secs, &ms);
+	String_AppendAll(&str, msg, len);
+	buffer[str.length] = '\0';
+	
+	uint32 line_offset = (10 + (str_offset * BFONT_HEIGHT)) * vid_mode->width;
+	bfont_draw_str(vram_s + line_offset, vid_mode->width, 1, buffer);
+	str_offset = (str_offset + 1) % MAX_ONSCREEN_LINES;
+}
+
 void Platform_Log(const char* msg, int len) {
-	fs_write(STDOUT_FILENO, msg,  len);
-	fs_write(STDOUT_FILENO, "\n",   1);
+	dbgio_write_buffer_xlat(msg,  len);
+	dbgio_write_buffer_xlat("\n",   1);
+	
+	if (window_inited) return;
+	// Log details on-screen for initial model initing etc
+	//  (this can take around 40 seconds on average)	
+	LogOnscreen(msg, len);
 }
 
 TimeMS DateTime_CurrentUTC_MS(void) {
 	uint32 secs, ms;
 	timer_ms_gettime(&secs, &ms);
 	
-	cc_uint64 curSecs = rtc_boot_time() + secs;
+	time_t boot_time = rtc_boot_time();
+	// workaround when RTC clock hasn't been setup
+	int boot_time_2000 =  946684800;
+	int boot_time_2024 = 1704067200;
+	if (boot_time < boot_time_2000) boot_time = boot_time_2024;
+	
+	cc_uint64 curSecs = boot_time + secs;
 	return (curSecs * 1000 + ms) + UNIX_EPOCH;
 }
 
@@ -75,7 +110,7 @@ void DateTime_CurrentLocal(struct DateTime* t) {
 /*########################################################################################################################*
 *-----------------------------------------------------Directory/File------------------------------------------------------*
 *#########################################################################################################################*/
-static const cc_string root_path = String_FromConst("/cd/");
+static cc_string root_path = String_FromConst("/cd/");
 
 static void GetNativePath(char* str, const cc_string* path) {
 	Mem_Copy(str, root_path.buffer, root_path.length);
@@ -88,7 +123,12 @@ cc_result Directory_Create(const cc_string* path) {
 	GetNativePath(str, path);
 	
 	int res = fs_mkdir(str);
-	return res == -1 ? errno : 0;
+	int err = res == -1 ? errno : 0;
+	
+	// Filesystem returns EINVAL when operation unsupported (e.g. CD system)
+	//  so rather than logging an error, just pretend it already exists
+	if (err == EINVAL) err = EEXIST;
+	return err;
 }
 
 int File_Exists(const cc_string* path) {
@@ -102,6 +142,9 @@ cc_result Directory_Enum(const cc_string* dirPath, void* obj, Directory_EnumCall
 	cc_string path; char pathBuffer[FILENAME_SIZE];
 	char str[NATIVE_STR_LEN];
 	int res;
+	// CD filesystem loader doesn't usually set errno
+	//  when it can't find the requested file
+	errno = 0;
 
 	GetNativePath(str, dirPath);
 	int fd = fs_open(str, O_DIR | O_RDONLY);
@@ -141,10 +184,16 @@ cc_result Directory_Enum(const cc_string* dirPath, void* obj, Directory_EnumCall
 static cc_result File_Do(cc_file* file, const cc_string* path, int mode) {
 	char str[NATIVE_STR_LEN];
 	GetNativePath(str, path);
-	
+	// CD filesystem loader doesn't usually set errno
+	//  when it can't find the requested file
+	errno = 0;
+
 	int res = fs_open(str, mode);
 	*file   = res;
-	return res == -1 ? errno : 0;
+	
+	int err = res == -1 ? errno : 0;
+	if (res == -1 && err == 0) err = ENOENT;
+	return err;
 }
 
 cc_result File_Open(cc_file* file, const cc_string* path) {
@@ -208,14 +257,11 @@ static void* ExecThread(void* param) {
 	return NULL;
 }
 
-void* Thread_Create(Thread_StartFunc func) {
+void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char* name) {
 	kthread_attr_t attrs = { 0 };
-	attrs.stack_size     = 64 * 1024;
-	attrs.label          = "CC thread";
-	return thd_create_ex(&attrs, ExecThread, func);
-}
-
-void Thread_Start2(void* handle, Thread_StartFunc func) {
+	attrs.stack_size     = stackSize;
+	attrs.label          = name;
+	*handle = thd_create_ex(&attrs, ExecThread, func);
 }
 
 void Thread_Detach(void* handle) {
@@ -395,10 +441,65 @@ cc_result Socket_CheckWritable(cc_socket s, cc_bool* writable) {
 /*########################################################################################################################*
 *--------------------------------------------------------Platform---------------------------------------------------------*
 *#########################################################################################################################*/
+static kos_blockdev_t sd_dev;
+static uint8 partition_type;
+
+static void InitSDCard(void) {
+	if (sd_init()) {
+		Platform_LogConst("Failed to init SD card"); return;
+	}
+	
+	if (sd_blockdev_for_partition(0, &sd_dev, &partition_type)) {
+		Platform_LogConst("Unable to find first partition on SD card"); return;
+  	}
+  	
+  	if (fs_fat_init()) {
+		Platform_LogConst("Failed to init FAT filesystem"); return;
+	}
+	
+  	if (fs_fat_mount("/sd", &sd_dev, FS_FAT_MOUNT_READWRITE)) {
+		Platform_LogConst("Failed to mount SD card"); return;
+  	}
+  	
+  	root_path = String_FromReadonly("/sd/ClassiCube");
+	fs_mkdir("/sd/ClassiCube");
+	Platform_ReadonlyFilesystem = false;
+}
+
+static void InitModem(void) {
+	int err;
+	Platform_LogConst("Initialising modem..");
+	
+	if (!modem_init()) {
+		Platform_LogConst("Modem initing failed"); return;
+	}
+	ppp_init();
+	
+	Platform_LogConst("Dialling modem.. (can take ~20 seconds)");
+	err = ppp_modem_init("111111111111", 0, NULL);
+	if (err) {
+		Platform_Log1("Establishing link failed (%i)", &err); return;
+	}
+
+	ppp_set_login("dream", "dreamcast");
+
+	Platform_LogConst("Connecting link.. (can take ~20 seconds)");
+	err = ppp_connect();
+	if (err) {
+		Platform_Log1("Connecting link failed (%i)", &err); return;
+ 	}
+}
+
 void Platform_Init(void) {
-	char cwd[600] = { 0 };
-	char* ptr = getcwd(cwd, 600);
-	Platform_Log1("WORKING DIR: %c", ptr);
+	Platform_ReadonlyFilesystem = true;
+	InitSDCard();
+	
+	if (net_default_dev) return;
+	// in case Broadband Adapter isn't active
+	InitModem();
+	// give some time for messages to stay on-screen
+	Platform_LogConst("Starting in 5 seconds..");
+	Thread_Sleep(5000);
 }
 void Platform_Free(void) { }
 

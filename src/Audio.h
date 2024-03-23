@@ -41,8 +41,12 @@ void Audio_PlayDigSound(cc_uint8 type);
 void Audio_PlayStepSound(cc_uint8 type);
 #define AUDIO_MAX_BUFFERS 4
 
+cc_bool AudioBackend_Init(void);
+void    AudioBackend_Tick(void);
+void    AudioBackend_Free(void);
+
 /* Initialises an audio context. */
-void Audio_Init(struct AudioContext* ctx, int buffers);
+cc_result Audio_Init(struct AudioContext* ctx, int buffers);
 /* Stops any playing audio and then frees the audio context. */
 void Audio_Close(struct AudioContext* ctx);
 /* Sets the format of the audio data to be played. */
@@ -58,6 +62,7 @@ cc_result Audio_Play(struct AudioContext* ctx);
 /* Returns the number of buffers being played or queued */
 /* (e.g. if inUse is 0, no audio buffers are being played or queued) */
 cc_result Audio_Poll(struct AudioContext* ctx, int* inUse);
+cc_result Audio_Pause(struct AudioContext* ctx); /* Only implemented with OpenSL ES backend */
 
 /* Plays the given audio data */
 cc_result Audio_PlayData(struct AudioContext* ctx, struct AudioData* data);
@@ -70,4 +75,11 @@ cc_bool Audio_DescribeError(cc_result res, cc_string* dst);
 void Audio_AllocChunks(cc_uint32 size, void** chunks, int numChunks);
 /* Frees a previously allocated group of chunks of data */
 void Audio_FreeChunks(void** chunks, int numChunks);
+
+extern struct AudioContext music_ctx;
+void Audio_ApplyVolume(cc_int16* samples, int count, int volume);
+void Audio_Warn(cc_result res, const char* action);
+
+cc_result AudioPool_Play(struct AudioData* data);
+void AudioPool_Close(void);
 #endif

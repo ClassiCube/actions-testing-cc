@@ -50,6 +50,8 @@ CC_VAR extern struct _GuiData {
 	float RawTouchScale;
 	/* The highest priority screen that has grabbed input. */
 	struct Screen* InputGrab;
+	/* Whether the touch UI is currently being displayed */
+	cc_bool TouchUI;
 } Gui;
 
 float Gui_Scale(float value);
@@ -173,6 +175,14 @@ struct WidgetVTABLE {
 #define WIDGET_FLAG_DISABLED   0x01
 /* Whether a widget can be selected via up/down */
 #define WIDGET_FLAG_SELECTABLE 0x02
+/* Whether for dual screen builds, this widget still appears on */
+/*  the main game screen instead of the dedicated UI screen */
+#define WIDGET_FLAG_MAINSCREEN 0x04
+#ifdef CC_BUILD_DUALSCREEN
+	#define Window_UI Window_Alt
+#else
+	#define Window_UI Window_Main
+#endif
 
 /* Represents an individual 2D gui component. */
 struct Widget { Widget_Body };
@@ -219,6 +229,10 @@ int Gui_Contains(int recX, int recY, int width, int height, int x, int y);
 int Gui_ContainsPointers(int x, int y, int width, int height);
 /* Shows HUD and Status screens. */
 void Gui_ShowDefault(void);
+#ifdef CC_BUILD_TOUCH
+/* Sets whether touch UI should be displayed or not */
+void Gui_SetTouchUI(cc_bool enabled);
+#endif
 
 /* (internal) Removes the screen from the screens list. */
 /* NOTE: This does NOT perform the usual 'screens changed' behaviour. */

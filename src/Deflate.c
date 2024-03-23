@@ -475,8 +475,8 @@ void Inflate_Process(struct InflateState* s) {
 	cc_uint32 distIdx, lenIdx;
 	int lit;
 	/* code lens table variables */
-	cc_uint32 count, repeatCount = 0;
-	cc_uint8  repeatValue = 0;
+	cc_uint32 count, repeatCount;
+	cc_uint8  repeatValue;
 	/* window variables */
 	cc_uint32 startIdx, curIdx;
 	cc_uint32 copyLen, windowCopyLen;

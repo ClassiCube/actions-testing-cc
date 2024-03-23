@@ -13,8 +13,12 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <pspkernel.h>
+#include <psputility.h>
+#include <pspsdk.h>
+#include <pspnet.h>
 #include <pspnet_inet.h>
 #include <pspnet_resolver.h>
+#include <pspnet_apctl.h>
 #include <psprtc.h>
 #include "_PlatformConsole.h"
 
@@ -58,15 +62,15 @@ TimeMS DateTime_CurrentUTC_MS(void) {
 }
 
 void DateTime_CurrentLocal(struct DateTime* t) {
-	pspTime curTime;
+	ScePspDateTime curTime;
 	sceRtcGetCurrentClockLocalTime(&curTime);
 
 	t->year   = curTime.year;
 	t->month  = curTime.month;
 	t->day    = curTime.day;
 	t->hour   = curTime.hour;
-	t->minute = curTime.minutes;
-	t->second = curTime.seconds;
+	t->minute = curTime.minute;
+	t->second = curTime.second;
 }
 
 #define US_PER_SEC 1000000ULL
@@ -81,11 +85,12 @@ cc_uint64 Stopwatch_Measure(void) {
 /*########################################################################################################################*
 *-----------------------------------------------------Directory/File------------------------------------------------------*
 *#########################################################################################################################*/
-extern int __path_absolute(const char *in, char *out, int len);
+static const cc_string root_path = String_FromConst("ms0:/PSP/GAME/ClassiCube/");
+
 static void GetNativePath(char* str, const cc_string* path) {
-	char tmp[NATIVE_STR_LEN + 1];
-	String_EncodeUtf8(tmp, path);
-	__path_absolute(tmp, str, NATIVE_STR_LEN);
+	Mem_Copy(str, root_path.buffer, root_path.length);
+	str += root_path.length;
+	String_EncodeUtf8(str, path);
 }
 
 #define GetSCEResult(result) (result >= 0 ? 0 : result & 0xFFFF)
@@ -173,7 +178,7 @@ cc_result File_Write(cc_file file, const void* data, cc_uint32 count, cc_uint32*
 }
 
 cc_result File_Close(cc_file file) {
-	int result = sceIoDclose(file);
+	int result = sceIoClose(file);
 	return GetSCEResult(result);
 }
 
@@ -214,18 +219,16 @@ static int ExecThread(unsigned int argc, void *argv) {
 	return 0;
 }
 
-void* Thread_Create(Thread_StartFunc func) {
+void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char* name) {
 	#define CC_THREAD_PRIORITY 17 // TODO: 18?
-	#define CC_THREAD_STACKSIZE 128 * 1024
 	#define CC_THREAD_ATTRS 0 // TODO PSP_THREAD_ATTR_VFPU?
-	
-	return (void*)sceKernelCreateThread("CC thread", ExecThread, CC_THREAD_PRIORITY, 
-						CC_THREAD_STACKSIZE, CC_THREAD_ATTRS, NULL);
-}
-
-void Thread_Start2(void* handle, Thread_StartFunc func) {
 	Thread_StartFunc func_ = func;
-	sceKernelStartThread((int)handle, sizeof(func_), (void*)&func_);
+	
+	int threadID = sceKernelCreateThread(name, ExecThread, CC_THREAD_PRIORITY, 
+										stackSize, CC_THREAD_ATTRS, NULL);
+										
+	*handle = (int)threadID;
+	sceKernelStartThread(threadID, sizeof(func_), (void*)&func_);
 }
 
 void Thread_Detach(void* handle) {
@@ -336,7 +339,7 @@ cc_result Socket_Connect(cc_socket* s, cc_sockaddr* addr, cc_bool nonblocking) {
 
 cc_result Socket_Read(cc_socket s, cc_uint8* data, cc_uint32 count, cc_uint32* modified) {
 	int recvCount = sceNetInetRecv(s, data, count, 0);
-	if (recvCount < 0) { *modified = recvCount; return 0; }
+	if (recvCount >= 0) { *modified = recvCount; return 0; }
 	
 	*modified = 0; 
 	return sceNetInetGetErrno();
@@ -344,7 +347,7 @@ cc_result Socket_Read(cc_socket s, cc_uint8* data, cc_uint32 count, cc_uint32* m
 
 cc_result Socket_Write(cc_socket s, const cc_uint8* data, cc_uint32 count, cc_uint32* modified) {
 	int sentCount = sceNetInetSend(s, data, count, 0);
-	if (sentCount < 0) { *modified = sentCount; return 0; }
+	if (sentCount >= 0) { *modified = sentCount; return 0; }
 	
 	*modified = 0; 
 	return sceNetInetGetErrno();
@@ -396,8 +399,49 @@ cc_result Socket_CheckWritable(cc_socket s, cc_bool* writable) {
 /*########################################################################################################################*
 *--------------------------------------------------------Platform---------------------------------------------------------*
 *#########################################################################################################################*/
+static void InitNetworking(void) {
+    sceUtilityLoadNetModule(PSP_NET_MODULE_COMMON);
+    sceUtilityLoadNetModule(PSP_NET_MODULE_INET);    
+    int res;
+
+    res = sceNetInit(128 * 1024, 0x20, 4096, 0x20, 4096);
+    if (res < 0) { Platform_Log1("sceNetInit failed: %i", &res); return; }
+
+    res = sceNetInetInit();
+    if (res < 0) { Platform_Log1("sceNetInetInit failed: %i", &res); return; }
+
+    res = sceNetResolverInit();
+    if (res < 0) { Platform_Log1("sceNetResolverInit failed: %i", &res); return; }
+
+    res = sceNetApctlInit(10 * 1024, 0x30);
+    if (res < 0) { Platform_Log1("sceNetApctlInit failed: %i", &res); return; }
+    
+    res = sceNetApctlConnect(1); // 1 = first profile
+    if (res) { Platform_Log1("sceNetApctlConnect failed: %i", &res); return; }
+
+    for (int try = 0; try < 20; try++) {
+        int state;
+        res = sceNetApctlGetState(&state);
+        if (res) { Platform_Log1("sceNetApctlGetState failed: %i", &res); return; }
+        
+        if (state == PSP_NET_APCTL_STATE_GOT_IP) break;
+
+        // not successful yet? try polling again in 50 ms
+        sceKernelDelayThread(50 * 1000);
+    }
+}
+
 void Platform_Init(void) {
+	InitNetworking();
 	/*pspDebugSioInit();*/ 
+	
+	// Disabling FPU exceptions avoids sometimes crashing with this line in Physics.c
+	//  *tx = vel->x == 0.0f ? MATH_LARGENUM : Math_AbsF(dx / vel->x);
+	// TODO: work out why this error is actually happening (inexact or underflow?) and properly fix it
+	pspSdkDisableFPUExceptions();
+	
+	// Create root directory
+	Directory_Create(&String_Empty);
 }
 void Platform_Free(void) { }
 

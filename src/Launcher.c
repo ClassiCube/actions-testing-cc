@@ -22,6 +22,7 @@
 #include "PackedCol.h"
 #include "SystemFonts.h"
 #include "TexturePack.h"
+#include "Gui.h"
 
 struct LScreen* Launcher_Active;
 cc_bool Launcher_ShouldExit, Launcher_ShouldUpdate;
@@ -114,6 +115,7 @@ cc_bool Launcher_StartGame(const cc_string* user, const cc_string* mppass, const
 	if (res) { Logger_SysWarn(res, "starting game"); return false; }
 
 	Launcher_ShouldExit = Platform_SingleProcess || Options_GetBool(LOPT_AUTO_CLOSE, false);
+
 	return true;
 }
 
@@ -234,7 +236,6 @@ void Launcher_Run(void) {
 		Options_Set("update-dirty", NULL);
 	}
 #endif
-
 	Drawer2D_Component.Init();
 	SystemFonts_Component.Init();
 	Drawer2D.BitmappedText    = false;
@@ -523,22 +524,53 @@ cc_bool Launcher_BitmappedText(void) {
 	return (useBitmappedFont || Launcher_Theme.ClassicBackground) && hasBitmappedFont;
 }
 
-void Launcher_DrawTitle(struct FontDesc* font, const char* text, struct Context2D* ctx) {
+static void DrawTitleText(struct FontDesc* font, const char* text, struct Context2D* ctx, 
+				cc_uint8 horAnchor, cc_uint8 verAnchor) {
 	cc_string title = String_FromReadonly(text);
 	struct DrawTextArgs args;
-	int x;
+	int x, y;
+	
+	DrawTextArgs_Make(&args, &title, font, false);
+	x = Gui_CalcPos(horAnchor, 0, Drawer2D_TextWidth(&args),  ctx->width);
+	y = Gui_CalcPos(verAnchor, 0, Drawer2D_TextHeight(&args), ctx->height);
+	
+	Drawer2D.Colors['f'] = BITMAPCOLOR_BLACK;
+	Context2D_DrawText(ctx, &args, x + Display_ScaleX(4), y + Display_ScaleY(4));
+	Drawer2D.Colors['f'] = BITMAPCOLOR_WHITE;
+	Context2D_DrawText(ctx, &args, x,                     y);
+}
 
+#ifdef CC_BUILD_DUALSCREEN
+extern cc_bool launcherTop;
+
+void Launcher_DrawTitle(struct FontDesc* font, const char* text, struct Context2D* ctx) {
+	/* Put title on top screen */
+	struct Context2D topCtx;
+	struct Bitmap bmp;
+	launcherTop = true;
+
+	ctx = &topCtx;
+	bmp.width  = Window_Alt.Width;
+	bmp.height = Window_Alt.Height;
+	Window_AllocFramebuffer(&bmp);
+	Context2D_Wrap(ctx, &bmp);
+	
+	Launcher_DrawBackgroundAll(ctx);
+	DrawTitleText(font, text, ctx, ANCHOR_CENTRE, ANCHOR_CENTRE);
+	Rect2D rect = { 0, 0, bmp.width, bmp.height };
+	Window_DrawFramebuffer(rect, &bmp);
+	
+	Window_FreeFramebuffer(&bmp);
+	launcherTop = false;
+}
+#else
+void Launcher_DrawTitle(struct FontDesc* font, const char* text, struct Context2D* ctx) {
 	/* Skip dragging logo when very small window to save space */
 	if (Window_Main.Height < 240) return;
-
-	DrawTextArgs_Make(&args, &title, font, false);
-	x = ctx->width / 2 - Drawer2D_TextWidth(&args) / 2;
-
-	Drawer2D.Colors['f'] = BITMAPCOLOR_BLACK;
-	Context2D_DrawText(ctx, &args, x + Display_ScaleX(4), Display_ScaleY(4));
-	Drawer2D.Colors['f'] = BITMAPCOLOR_WHITE;
-	Context2D_DrawText(ctx, &args, x,                     0);
+	
+	DrawTitleText(font, text, ctx, ANCHOR_CENTRE, ANCHOR_MIN);
 }
+#endif
 
 void Launcher_MakeTitleFont(struct FontDesc* font) {
 	Drawer2D.BitmappedText = Launcher_BitmappedText();
