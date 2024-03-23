@@ -16,6 +16,8 @@ jobs:
       - name: Compile DS build
         id: compile
         run: |
+          export BLOCKDS=/opt/blocksds/
+          export BLOCKSDSEXT=/opt/blocksds/external
           make ds
 
       - uses: ./.github/actions/notify_failure
