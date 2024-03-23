@@ -16,7 +16,7 @@ jobs:
       - name: Compile DS build
         id: compile
         run: |
-          export BLOCKSDS=/opt/blocksds
+          export BLOCKSDS=/opt/blocksds/core
           export BLOCKSDSEXT=/opt/blocksds/external
           make ds
 
