@@ -29,5 +29,5 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube.nds'
-          DEST_NAME: 'ClassiCube.nds'
+          SOURCE_FILE: 'classicube.nds'
+          DEST_NAME: 'classicube.nds'
