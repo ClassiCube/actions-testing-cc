@@ -16,16 +16,32 @@ jobs:
       - name: Compile PS3 build
         id: compile
         run: |
+          export PS3DEV=/usr/local/ps3dev
+          export PSL1GHT=/usr/local/ps3dev
+          export PATH=$PATH:$PS3DEV/bin
+          export PATH=$PATH:$PS3DEV/ppu/bin
           make ps3
 
+
+      # otherwise notify_failure doesn't work
+      - name: Install curl when necessary
+        if: ${{ always() && steps.compile.outcome == 'failure' }}
+        run: apt install curl
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile PS3 build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
-          
+
+
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-ps3.self'
           DEST_NAME: 'ClassiCube-ps3.self'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-ps3.pkg'
+          DEST_NAME: 'ClassiCube-ps3.pkg'
