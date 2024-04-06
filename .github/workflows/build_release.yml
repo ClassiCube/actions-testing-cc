@@ -1,5 +1,5 @@
 name: Build release
-on: [workflow-dispatch]
+on: [workflow_dispatch]
 
 concurrency:
   group: ${{ github.ref }}-release
