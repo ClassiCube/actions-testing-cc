@@ -1,4 +1,5 @@
 name: Build release
+on: [workflow-dispatch]
 
 concurrency:
   group: ${{ github.ref }}-release
@@ -66,3 +67,16 @@ jobs:
         with:
           SOURCE_FILE: 'cc-linux64.tar.gz'
           DEST_NAME: 'ClassiCube-Linux64.tar.gz'
+          
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'cc-mac32.tar.gz'
+          DEST_NAME: 'ClassiCube-macOS32.tar.gz'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'cc-mac64.tar.gz'
+          DEST_NAME: 'ClassiCube-macOS64.tar.gz'
