@@ -10,6 +10,7 @@ jobs:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
       - name: Retrieve classicube texture pack
         run: |
           wget https://www.classicube.net/static/default.zip
@@ -40,6 +41,13 @@ jobs:
             tar -zcvf $1 ClassiCube
             rm ClassiCube/ClassiCube
           }
+           
+          # ./ClassiCube
+          make_windows_zip() {
+            cp $2 ClassiCube/ClassiCube.exe
+            zip $1 ClassiCube
+            rm ClassiCube/ClassiCube.exe
+          }
           
           # Generate Linux builds
           make_unix_tar cc-linux32.tar.gz cc-linux32
@@ -55,7 +63,8 @@ jobs:
           NOTIFY_MESSAGE: 'Failed to produce release'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
-          
+        
+      # Generate Linux release files
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
@@ -69,6 +78,7 @@ jobs:
           DEST_NAME: 'ClassiCube-Linux64.tar.gz'
           
           
+      # Generate macOS release files
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
