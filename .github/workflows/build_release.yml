@@ -1,0 +1,68 @@
+name: Build release
+
+concurrency:
+  group: ${{ github.ref }}-release
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retrieve classicube texture pack
+        run: |
+          wget https://www.classicube.net/static/default.zip
+      - name: Retrieve Windows binaries
+        run: |
+          wget https://cdn.classicube.net/client/latest/ClassiCube.exe -O cc-w32-d3d9.exe
+          wget https://cdn.classicube.net/client/latest/ClassiCube.64.exe -O cc-w64-d3d9.exe
+      - name: Retrieve macOS binaries
+        run: |
+          wget https://cdn.classicube.net/client/latest/ClassiCube.64.osx -O cc-mac64
+          wget https://cdn.classicube.net/client/latest/ClassiCube.osx -O cc-mac32
+      - name: Retrieve Linux binaries
+        run: |
+          wget https://cdn.classicube.net/client/latest/ClassiCube -O cc-linux64
+          wget https://cdn.classicube.net/client/latest/ClassiCube.32 -O cc-linux32
+      - name: Generate builds
+        id: compile
+        shell: bash
+        run: |
+          mkdir ClassiCube
+          mkdir ClassiCube/texpacks
+          cp default.zip ClassiCube/texpacks/default.zip
+          
+          # ./ClassiCube
+          make_unix_tar() {
+            cp $2 ClassiCube/ClassiCube
+            chmod +x ClassiCube/ClassiCube
+            tar -zcvf $1 ClassiCube
+            rm ClassiCube/ClassiCube
+          }
+          
+          # Generate Linux builds
+          make_unix_tar cc-linux32.tar.gz cc-linux32
+          make_unix_tar cc-linux64.tar.gz cc-linux64
+          
+          make_unix_tar cc-mac32.tar.gz cc-mac32
+          make_unix_tar cc-mac64.tar.gz cc-mac64
+
+
+      - uses: ./.github/actions/notify_failure
+        if: ${{ always() && steps.compile.outcome == 'failure' }}
+        with:
+          NOTIFY_MESSAGE: 'Failed to produce release'
+          WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
+          
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'cc-linux32.tar.gz'
+          DEST_NAME: 'ClassiCube-Linux32.tar.gz'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'cc-linux64.tar.gz'
+          DEST_NAME: 'ClassiCube-Linux64.tar.gz'
