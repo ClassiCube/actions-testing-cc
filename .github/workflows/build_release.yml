@@ -10,14 +10,14 @@ jobs:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Retrieve classicube texture pack
         run: |
           wget https://www.classicube.net/static/default.zip
       - name: Retrieve Windows binaries
         run: |
-          wget https://cdn.classicube.net/client/latest/ClassiCube.exe -O cc-w32-d3d9.exe
-          wget https://cdn.classicube.net/client/latest/ClassiCube.64.exe -O cc-w64-d3d9.exe
+          wget https://cdn.classicube.net/client/latest/ClassiCube.exe -O cc-win32.exe
+          wget https://cdn.classicube.net/client/latest/ClassiCube.64.exe -O cc-win64.exe
       - name: Retrieve macOS binaries
         run: |
           wget https://cdn.classicube.net/client/latest/ClassiCube.64.osx -O cc-mac64
@@ -32,7 +32,7 @@ jobs:
         run: |
           mkdir ClassiCube
           mkdir ClassiCube/texpacks
-          cp default.zip ClassiCube/texpacks/default.zip
+          cp default.zip ClassiCube/texpacks/classicube.zip
           
           # ./ClassiCube
           make_unix_tar() {
@@ -53,8 +53,13 @@ jobs:
           make_unix_tar cc-linux32.tar.gz cc-linux32
           make_unix_tar cc-linux64.tar.gz cc-linux64
           
+          # Generate macOS builds
           make_unix_tar cc-mac32.tar.gz cc-mac32
           make_unix_tar cc-mac64.tar.gz cc-mac64
+          
+          # Generate Windows builds
+          make_windows_zip cc-win32.zip cc-win32.exe
+          make_windows_zip cc-win64.zip cc-win64.exe
 
 
       - uses: ./.github/actions/notify_failure
@@ -69,13 +74,13 @@ jobs:
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'cc-linux32.tar.gz'
-          DEST_NAME: 'ClassiCube-Linux32.tar.gz'
+          DEST_NAME: 'cc-linux32.tar.gz'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'cc-linux64.tar.gz'
-          DEST_NAME: 'ClassiCube-Linux64.tar.gz'
+          DEST_NAME: 'cc-linux64.tar.gz'
           
           
       # Generate macOS release files
@@ -83,10 +88,24 @@ jobs:
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'cc-mac32.tar.gz'
-          DEST_NAME: 'ClassiCube-macOS32.tar.gz'
+          DEST_NAME: 'cc-mac32.tar.gz'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'cc-mac64.tar.gz'
-          DEST_NAME: 'ClassiCube-macOS64.tar.gz'
+          DEST_NAME: 'cc-mac64.tar.gz'
+          
+          
+      # Generate Windows release files
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'cc-win32.zip'
+          DEST_NAME: 'cc-win32.zip'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'cc-win64.zip'
+          DEST_NAME: 'cc-win64.zip'
