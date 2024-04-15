@@ -131,11 +131,11 @@ void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
 	
 #define FB_INDEX(x, y) (((y >> 5)*32*width + ((x >> 5)<<10) + (x&3) + ((y&1)<<2) + (((x&31)>>2)<<3) + (((y&31)>>1)<<6)) ^ ((y&8)<<2))
 
-	for (int y = r.y; y < r.y + r.height; y++) 
+	for (int y = r.y; y < r.y + r.Height; y++) 
 	{
 		cc_uint32* src = bmp->scan0 + y * bmp->width;
 		
-		for (int x = r.x; x < r.x + r.width; x++) {
+		for (int x = r.x; x < r.x + r.Width; x++) {
 			// TODO: Can the uint be copied directly ?
 			int R = BitmapCol_R(src[x]);
 			int G = BitmapCol_G(src[x]);
