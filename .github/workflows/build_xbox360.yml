@@ -24,10 +24,26 @@ jobs:
       # otherwise notify_failure doesn't work
       - name: Install curl when necessary
         if: ${{ always() && steps.compile.outcome == 'failure' }}
-        run: apt-get install -y curl
+        run: |
+          sed -i -e 's/archive.ubuntu.com\|security.ubuntu.com/old-releases.ubuntu.com/g' /etc/apt/sources.list
+          apt-get update
+          apt-get install -y curl
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile Xbox 360 build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
+          
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-xbox360.elf'
+          DEST_NAME: 'ClassiCube-xbox360.elf'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-xbox360.elf32'
+          DEST_NAME: 'ClassiCube-xbox360.elf32'
