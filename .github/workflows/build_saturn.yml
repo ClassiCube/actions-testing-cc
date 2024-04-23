@@ -1,0 +1,32 @@
+name: Build latest (Saturn)
+on: [push]
+
+concurrency:
+  group: ${{ github.ref }}-saturn
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    container:
+      image: ijacquez/yaul
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compile Saturn build
+        id: compile
+        run: |
+          make saturn
+          find .
+
+      - uses: ./.github/actions/notify_failure
+        if: ${{ always() && steps.compile.outcome == 'failure' }}
+        with:
+          NOTIFY_MESSAGE: 'Failed to compile Saturn build'
+          WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-dc.cdi'
+          DEST_NAME: 'ClassiCube-dc.cdi'
