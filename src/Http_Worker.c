@@ -179,6 +179,9 @@ static const cc_string curlAlt = String_FromConst("libcurl.so");
 #elif defined CC_BUILD_SERENITY
 static const cc_string curlLib = String_FromConst("/usr/local/lib/libcurl.so");
 static const cc_string curlAlt = String_FromConst("/usr/local/lib/libcurl.so");
+#elif defined CC_BUILD_OS2
+static const cc_string curlLib = String_FromConst("/@unixroot/usr/lib/curl4.dll");
+static const cc_string curlAlt = String_FromConst("/@unixroot/usr/local/lib/curl4.dll");
 #else
 static const cc_string curlLib = String_FromConst("libcurl.so.4");
 static const cc_string curlAlt = String_FromConst("libcurl.so.3");
@@ -186,10 +189,17 @@ static const cc_string curlAlt = String_FromConst("libcurl.so.3");
 
 static cc_bool LoadCurlFuncs(void) {
 	static const struct DynamicLibSym funcs[] = {
+#if !defined CC_BUILD_OS2
 		DynamicLib_Sym(curl_global_init),    DynamicLib_Sym(curl_global_cleanup),
 		DynamicLib_Sym(curl_easy_init),      DynamicLib_Sym(curl_easy_perform),
 		DynamicLib_Sym(curl_easy_setopt),    DynamicLib_Sym(curl_easy_cleanup),
 		DynamicLib_Sym(curl_slist_free_all), DynamicLib_Sym(curl_slist_append)
+#else
+		DynamicLib_SymC(curl_global_init),    DynamicLib_SymC(curl_global_cleanup),
+		DynamicLib_SymC(curl_easy_init),      DynamicLib_SymC(curl_easy_perform),
+		DynamicLib_SymC(curl_easy_setopt),    DynamicLib_SymC(curl_easy_cleanup),
+		DynamicLib_SymC(curl_slist_free_all), DynamicLib_SymC(curl_slist_append)
+#endif
 	};
 	cc_bool success;
 	void* lib;
@@ -225,7 +235,6 @@ static void HttpBackend_Init(void) {
 	if (!LoadCurlFuncs()) { Logger_WarnFunc(&msg); return; }
 	res = _curl_global_init(CURL_GLOBAL_DEFAULT);
 	if (res) { Logger_SimpleWarn(res, "initing curl"); return; }
-
 	curl = _curl_easy_init();
 	if (!curl) { Logger_SimpleWarn(res, "initing curl_easy"); return; }
 
@@ -1155,6 +1164,24 @@ static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* url) {
     CFRelease(request);
     return result;
 }
+#elif !defined CC_BUILD_NETWORKING
+/*########################################################################################################################*
+*------------------------------------------------------Null backend-------------------------------------------------------*
+*#########################################################################################################################*/
+#include "Errors.h"
+
+static cc_bool HttpBackend_DescribeError(cc_result res, cc_string* dst) {
+	return false;
+}
+
+static void HttpBackend_Init(void) { }
+
+static void Http_AddHeader(struct HttpRequest* req, const char* key, const cc_string* value) { }
+
+static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* url) {
+	req->progress = 100;
+	return ERR_NOT_SUPPORTED;
+}
 #endif
 
 
@@ -1304,8 +1331,8 @@ static void WorkerLoop(void) {
 
 /* Adds a req to the list of pending requests, waking up worker thread if needed */
 static void HttpBackend_Add(struct HttpRequest* req, cc_uint8 flags) {
-#ifdef CC_BUILD_PSP
-	/* TODO why doesn't threading work properly */
+#if defined CC_BUILD_PSP || defined CC_BUILD_NDS
+	/* TODO why doesn't threading work properly on PSP */
 	DoRequest(req);
 #else
 	Mutex_Lock(pendingMutex);

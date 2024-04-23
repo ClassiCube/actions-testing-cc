@@ -58,15 +58,12 @@ void Platform_Log(const char* msg, int len) {
 	
 	OSReport("%s\n", tmp);
 }
-#define WIIU_EPOCH_ADJUST 946684800000ULL // Wii U time epoch is year 2000, not 1970
+#define WIIU_EPOCH_ADJUST 946684800ULL // Wii U time epoch is year 2000, not 1970
 
-TimeMS DateTime_CurrentUTC_MS(void) {
-	OSTime time = OSGetTime();
-	// avoid overflow in time calculation
+TimeMS DateTime_CurrentUTC(void) {
+	OSTime time   = OSGetTime();
 	cc_int64 secs = (time_t)OSTicksToSeconds(time);
-	time -= OSSecondsToTicks(secs);
-	cc_uint64 msecs = OSTicksToMilliseconds(time);
-      	return (secs * 1000 + msecs) + UNIX_EPOCH + WIIU_EPOCH_ADJUST;
+	return secs + UNIX_EPOCH_SECONDS + WIIU_EPOCH_ADJUST;
 }
 
 void DateTime_CurrentLocal(struct DateTime* t) {
@@ -98,13 +95,17 @@ cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
 /*########################################################################################################################*
 *-----------------------------------------------------Directory/File------------------------------------------------------*
 *#########################################################################################################################*/
-static void GetNativePath(char* str, const cc_string* path) {
-	//const char* sd_root = WHBGetSdCardMountPath();
+// fs:/vol/external01
+//const char* sd_root = WHBGetSdCardMountPath();
 	//int sd_length = String_Length(sd_root);
 	//Mem_Copy(str, sd_root, sd_length);
 	//str   += sd_length;
 	
-	//*str++ = '/';
+static const cc_string root_path = String_FromConst("ClassiCube/");
+
+static void GetNativePath(char* str, const cc_string* path) {
+	Mem_Copy(str, root_path.buffer, root_path.length);
+	str += root_path.length;
 	String_EncodeUtf8(str, path);
 }
 
@@ -447,7 +448,13 @@ cc_bool Platform_DescribeError(cc_result res, cc_string* dst) {
 }
 
 void Platform_Init(void) {
-	WHBProcInit();	
+	WHBProcInit();
+	mkdir("ClassiCube", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+}
+
+cc_bool Process_OpenSupported = false;
+cc_result Process_StartOpen(const cc_string* args) {
+	return ERR_NOT_SUPPORTED;
 }
 
 

@@ -53,11 +53,11 @@ int Game_MaxViewDistance  = DEFAULT_MAX_VIEWDIST;
 int     Game_FpsLimit, Game_Vertices;
 cc_bool Game_SimpleArmsAnim;
 static cc_bool gameRunning;
-static cc_bool anaglyph3D;
 
 cc_bool Game_ClassicMode, Game_ClassicHacks;
 cc_bool Game_AllowCustomBlocks;
 cc_bool Game_AllowServerTextures;
+cc_bool Game_Anaglyph3D;
 
 cc_bool Game_ViewBobbing, Game_HideGui;
 cc_bool Game_BreakableLiquids, Game_ScreenshotRequested;
@@ -307,10 +307,13 @@ static void HandleInactiveChanged(void* obj) {
 	if (Window_Main.Inactive) {
 		Chat_AddOf(&Gfx_LowPerfMessage, MSG_TYPE_EXTRASTATUS_2);
 		Gfx_SetFpsLimit(false, 1000 / 1.0f);
+		Gfx.ReducedPerfMode = true;
 	} else {
 		Chat_AddOf(&String_Empty,       MSG_TYPE_EXTRASTATUS_2);
 		Game_SetFpsLimit(Game_FpsLimit);
-		Chat_AddRaw(LOWPERF_EXIT_MESSAGE);
+
+		Gfx.ReducedPerfMode         = false;
+		Gfx.ReducedPerfModeCooldown = 2;
 	}
 
 #ifdef CC_BUILD_WEB
@@ -328,28 +331,27 @@ static void Game_WarnFunc(const cc_string* msg) {
 }
 
 static void LoadOptions(void) {
-	Game_ClassicMode       = Options_GetBool(OPT_CLASSIC_MODE, false);
-	Game_ClassicHacks      = Options_GetBool(OPT_CLASSIC_HACKS, false);
-	Game_AllowCustomBlocks = Options_GetBool(OPT_CUSTOM_BLOCKS, true);
-	Game_SimpleArmsAnim    = Options_GetBool(OPT_SIMPLE_ARMS_ANIM, false);
-	Game_ViewBobbing       = Options_GetBool(OPT_VIEW_BOBBING, true);
+	Game_ClassicMode  = Options_GetBool(OPT_CLASSIC_MODE,  false);
+	Game_ClassicHacks = Options_GetBool(OPT_CLASSIC_HACKS, false);
+	Game_Anaglyph3D   = Options_GetBool(OPT_ANAGLYPH3D,    false);
+	Game_ViewBobbing  = Options_GetBool(OPT_VIEW_BOBBING,  true);
+	
+	Game_AllowCustomBlocks   = !Game_ClassicMode && Options_GetBool(OPT_CUSTOM_BLOCKS,      true);
+	Game_SimpleArmsAnim      = !Game_ClassicMode && Options_GetBool(OPT_SIMPLE_ARMS_ANIM,   false);
+	Game_BreakableLiquids    = !Game_ClassicMode && Options_GetBool(OPT_MODIFIABLE_LIQUIDS, false);
+	Game_AllowServerTextures = !Game_ClassicMode && Options_GetBool(OPT_SERVER_TEXTURES,    true);
 
 	Game_ViewDistance     = Options_GetInt(OPT_VIEW_DISTANCE, 8, 4096, DEFAULT_VIEWDIST);
 	Game_UserViewDistance = Game_ViewDistance;
-	Game_BreakableLiquids = !Game_ClassicMode && Options_GetBool(OPT_MODIFIABLE_LIQUIDS, false);
-	Game_AllowServerTextures = Options_GetBool(OPT_SERVER_TEXTURES, true);
 	/* TODO: Do we need to support option to skip SSL */
 	/*cc_bool skipSsl = Options_GetBool("skip-ssl-check", false);
 	if (skipSsl) {
 		ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
 		Options.Set("skip-ssl-check", false);
 	}*/
-	anaglyph3D = Options_GetBool("anaglyph3D", false);
 }
 
-#ifdef CC_BUILD_MINFILES
-static void LoadPlugins(void) { }
-#else
+#ifdef CC_BUILD_PLUGINS
 static void LoadPlugin(const cc_string* path, void* obj) {
 	void* lib;
 	void* verSym;  /* EXPORT int Plugin_ApiVersion = GAME_API_VER; */
@@ -390,6 +392,8 @@ static void LoadPlugins(void) {
 	res = Directory_Enum(&dir, NULL, LoadPlugin);
 	if (res) Logger_SysWarn(res, "enumerating plugins directory");
 }
+#else
+static void LoadPlugins(void) { }
 #endif
 
 static void Game_Free(void* obj);
@@ -498,7 +502,7 @@ static void Render3DFrame(double delta, float t) {
 	EnvRenderer_RenderMapSides();
 
 	EntityShadows_Render();
-	if (Game_SelectedPos.Valid && !Game_HideGui) {
+	if (Game_SelectedPos.valid && !Game_HideGui) {
 		SelOutlineRenderer_Render(&Game_SelectedPos, true);
 	}
 
@@ -514,7 +518,7 @@ static void Render3DFrame(double delta, float t) {
 
 	/* Need to render again over top of translucent block, as the selection outline */
 	/* is drawn without writing to the depth buffer */
-	if (Game_SelectedPos.Valid && !Game_HideGui && Blocks.Draw[Game_SelectedPos.block] == DRAW_TRANSLUCENT) {
+	if (Game_SelectedPos.valid && !Game_HideGui && Blocks.Draw[Game_SelectedPos.block] == DRAW_TRANSLUCENT) {
 		SelOutlineRenderer_Render(&Game_SelectedPos, false);
 	}
 
@@ -526,32 +530,14 @@ static void Render3DFrame(double delta, float t) {
 static void Render3D_Anaglyph(double delta, float t) {
 	struct Matrix proj = Gfx.Projection;
 	struct Matrix view = Gfx.View;
-	struct Matrix proj_left, proj_right;
-	struct Matrix view_left, view_right;
 
-	/* Translation values according to values captured by */
-	/*  analysing the OpenGL calls made by classic using gDEbugger */
-	/* TODO move calculation to Camera??? */
-	/* TODO these still aren't quite right, ghosting occurs */
-	Matrix_Translate(&proj_left,   0.07f, 0, 0);
-	Matrix_Mul(&Gfx.Projection, &proj, &proj_left);
-	Matrix_Translate(&view_left,  -0.10f, 0, 0);
-	Matrix_Mul(&Gfx.View, &view, &view_left);
-
-	Gfx_SetColorWrite(false, true, true, false);
+	Gfx_Set3DLeft(&proj, &view);
 	Render3DFrame(delta, t);
 
-	Matrix_Translate(&proj_right, -0.07f, 0, 0);
-	Matrix_Mul(&Gfx.Projection, &proj, &proj_right);
-	Matrix_Translate(&view_right,  0.10f, 0, 0);
-	Matrix_Mul(&Gfx.View, &view, &view_right);
-
-	Gfx_ClearBuffers(GFX_BUFFER_DEPTH);
-	Gfx_SetColorWrite(true, false, false, false);
+	Gfx_Set3DRight(&proj, &view);
 	Render3DFrame(delta, t);
 
-	Gfx.Projection = proj;
-	Gfx_SetColorWrite(true, true, true, true);
+	Gfx_End3D(&proj, &view);
 }
 
 static void PerformScheduledTasks(double time) {
@@ -637,7 +623,9 @@ static void Game_RenderFrame(double delta) {
 	Game.Time += delta;
 	Game_Vertices = 0;
 
+	if (Input.Sources & INPUT_SOURCE_GAMEPAD) Gamepad_Tick(delta);
 	Camera.Active->UpdateMouse(delta);
+
 	if (!Window_Main.Focused && !Gui.InputGrab) Gui_ShowPauseMenu();
 
 	if (KeyBind_IsPressed(KEYBIND_ZOOM_SCROLL) && !Gui.InputGrab) {
@@ -664,7 +652,7 @@ static void Game_RenderFrame(double delta) {
 		Camera_KeyLookUpdate(delta);
 		InputHandler_Tick();
 
-		if (anaglyph3D) {
+		if (Game_Anaglyph3D) {
 			Render3D_Anaglyph(delta, t);
 		} else {
 			Render3DFrame(delta, t);
@@ -675,6 +663,15 @@ static void Game_RenderFrame(double delta) {
 
 	Gfx_Begin2D(Game.Width, Game.Height);
 	Gui_RenderGui(delta);
+	OnscreenKeyboard_Draw3D();
+/* TODO find a better solution than this */
+#ifdef CC_BUILD_3DS
+	if (Game_Anaglyph3D) {
+		extern void Gfx_SetTopRight(void);
+		Gfx_SetTopRight();
+		Gui_RenderGui(delta);
+	}
+#endif
 	Gfx_End2D();
 
 	if (Game_ScreenshotRequested) Game_TakeScreenshot();

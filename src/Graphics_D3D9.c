@@ -30,14 +30,13 @@ static float totalMem;
 static cc_bool fallbackRendering;
 
 static void D3D9_RestoreRenderStates(void);
-static void D3D9_FreeResource(GfxResourceID* resource) {
+static void D3D9_FreeResource(GfxResourceID resource) {
 	cc_uintptr addr;
 	ULONG refCount;
 	IUnknown* unk;
 	
-	unk = (IUnknown*)(*resource);
+	unk = (IUnknown*)resource;
 	if (!unk) return;
-	*resource = 0;
 
 #ifdef __cplusplus
 	refCount = unk->Release();
@@ -214,8 +213,8 @@ cc_bool Gfx_TryRestoreContext(void) {
 
 void Gfx_Free(void) {
 	Gfx_FreeState();
-	D3D9_FreeResource(&device);
-	D3D9_FreeResource(&d3d);
+	D3D9_FreeResource(device); device = NULL;
+	D3D9_FreeResource(d3d);    d3d    = NULL;
 }
 
 static void Gfx_FreeState(void) { 
@@ -248,13 +247,12 @@ static void Gfx_RestoreState(void) {
 /*########################################################################################################################*
 *---------------------------------------------------------Textures--------------------------------------------------------*
 *#########################################################################################################################*/
-static void D3D9_SetTextureData(IDirect3DTexture9* texture, struct Bitmap* bmp, int lvl) {
+static void D3D9_SetTextureData(IDirect3DTexture9* texture, struct Bitmap* bmp, int rowWidth, int lvl) {
 	D3DLOCKED_RECT rect;
 	cc_result res = IDirect3DTexture9_LockRect(texture, lvl, &rect, NULL, 0);
 	if (res) Logger_Abort2(res, "D3D9_LockTextureData");
 
-	cc_uint32 size = Bitmap_DataSize(bmp->width, bmp->height);
-	Mem_Copy(rect.pBits, bmp->scan0, size);
+	CopyTextureData(rect.pBits, rect.Pitch, bmp, rowWidth << 2);
 
 	res = IDirect3DTexture9_UnlockRect(texture, lvl);
 	if (res) Logger_Abort2(res, "D3D9_UnlockTextureData");
@@ -264,7 +262,6 @@ static void D3D9_SetTexturePartData(IDirect3DTexture9* texture, int x, int y, co
 	D3DLOCKED_RECT rect;
 	cc_result res;
 	RECT part;
-
 	part.left = x; part.right  = x + bmp->width;
 	part.top  = y; part.bottom = y + bmp->height;
 
@@ -272,6 +269,7 @@ static void D3D9_SetTexturePartData(IDirect3DTexture9* texture, int x, int y, co
 	if (res) Logger_Abort2(res, "D3D9_LockTexturePartData");
 
 	CopyTextureData(rect.pBits, rect.Pitch, bmp, rowWidth << 2);
+
 	res = IDirect3DTexture9_UnlockRect(texture, lvl);
 	if (res) Logger_Abort2(res, "D3D9_UnlockTexturePartData");
 }
@@ -296,7 +294,7 @@ static void D3D9_DoMipmaps(IDirect3DTexture9* texture, int x, int y, struct Bitm
 		if (partial) {
 			D3D9_SetTexturePartData(texture, x, y, &mipmap, width, lvl);
 		} else {
-			D3D9_SetTextureData(texture, &mipmap, lvl);
+			D3D9_SetTextureData(texture, &mipmap, width, lvl);
 		}
 
 		if (prev != bmp->scan0) Mem_Free(prev);
@@ -329,7 +327,7 @@ static IDirect3DTexture9* DoCreateTexture(struct Bitmap* bmp, int levels, int po
 	return tex;
 }
 
-static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, cc_uint8 flags, cc_bool mipmaps) {
+static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
 	IDirect3DTexture9* tex;
 	IDirect3DTexture9* sys;
 	cc_result res;
@@ -351,20 +349,20 @@ static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, cc_uint8 flags, cc_boo
 			}
 		}
 
-		D3D9_SetTextureData(tex, bmp, 0);
-		if (mipmaps) D3D9_DoMipmaps(tex, 0, 0, bmp, bmp->width, false);
+		D3D9_SetTextureData(tex, bmp, rowWidth, 0);
+		if (mipmaps) D3D9_DoMipmaps(tex, 0, 0, bmp, rowWidth, false);
 		return tex;
 	}
 
 	sys = DoCreateTexture(bmp, levels, D3DPOOL_SYSTEMMEM);
-	D3D9_SetTextureData(sys, bmp, 0);
-	if (mipmaps) D3D9_DoMipmaps(sys, 0, 0, bmp, bmp->width, false);
+	D3D9_SetTextureData(sys, bmp, rowWidth, 0);
+	if (mipmaps) D3D9_DoMipmaps(sys, 0, 0, bmp, rowWidth, false);
 		
 	tex = DoCreateTexture(bmp, levels, D3DPOOL_DEFAULT);
 	res = IDirect3DDevice9_UpdateTexture(device, (IDirect3DBaseTexture9*)sys, (IDirect3DBaseTexture9*)tex);
 	if (res) Logger_Abort2(res, "D3D9_CreateTexture - Update");
 
-	D3D9_FreeResource(&sys);
+	D3D9_FreeResource(sys);
 	return tex;
 }
 
@@ -374,18 +372,12 @@ void Gfx_UpdateTexture(GfxResourceID texId, int x, int y, struct Bitmap* part, i
 	if (mipmaps) D3D9_DoMipmaps(texture, x, y, part, rowWidth, true);
 }
 
-void Gfx_UpdateTexturePart(GfxResourceID texId, int x, int y, struct Bitmap* part, cc_bool mipmaps) {
-	Gfx_UpdateTexture(texId, x, y, part, part->width, mipmaps);
-}
-
 void Gfx_BindTexture(GfxResourceID texId) {
 	cc_result res = IDirect3DDevice9_SetTexture(device, 0, (IDirect3DBaseTexture9*)texId);
 	if (res) Logger_Abort2(res, "D3D9_BindTexture");
 }
 
-void Gfx_DeleteTexture(GfxResourceID* texId) { D3D9_FreeResource(texId); }
-
-void Gfx_SetTexturing(cc_bool enabled) { }
+void Gfx_DeleteTexture(GfxResourceID* texId) { D3D9_FreeResource(*texId); *texId = NULL; }
 
 void Gfx_EnableMipmaps(void) {
 	if (!Gfx.Mipmaps) return;
@@ -582,7 +574,7 @@ void Gfx_BindIb(GfxResourceID ib) {
 	if (res) Logger_Abort2(res, "D3D9_BindIb");
 }
 
-void Gfx_DeleteIb(GfxResourceID* ib) { D3D9_FreeResource(ib); }
+void Gfx_DeleteIb(GfxResourceID* ib) { D3D9_FreeResource(*ib); *ib = NULL; }
 
 
 /*########################################################################################################################*
@@ -627,7 +619,7 @@ static GfxResourceID Gfx_AllocStaticVb(VertexFormat fmt, int count) {
 	return D3D9_AllocVertexBuffer(fmt, count, D3DUSAGE_WRITEONLY);
 }
 
-void Gfx_DeleteVb(GfxResourceID* vb) { D3D9_FreeResource(vb); }
+void Gfx_DeleteVb(GfxResourceID* vb) { D3D9_FreeResource(*vb); *vb = NULL; }
 
 void Gfx_BindVb(GfxResourceID vb) {
 	IDirect3DVertexBuffer9* vbuffer = (IDirect3DVertexBuffer9*)vb;
@@ -653,7 +645,7 @@ static GfxResourceID Gfx_AllocDynamicVb(VertexFormat fmt, int maxVertices) {
 	return D3D9_AllocVertexBuffer(fmt, maxVertices, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY);
 }
 
-void Gfx_DeleteDynamicVb(GfxResourceID* vb) { D3D9_FreeResource(vb); }
+void Gfx_DeleteDynamicVb(GfxResourceID* vb) { D3D9_FreeResource(*vb); *vb = NULL; }
 
 void Gfx_BindDynamicVb(GfxResourceID vb) {
 	IDirect3DVertexBuffer9* vbuffer = (IDirect3DVertexBuffer9*)vb;
@@ -815,15 +807,15 @@ cc_result Gfx_TakeScreenshot(struct Stream* output) {
 	if (res) goto finished;
 	{
 		Bitmap_Init(bmp, desc.Width, desc.Height, (BitmapCol*)rect.pBits);
-		res = Png_Encode(&bmp, output, NULL, false);
+		res = Png_Encode(&bmp, output, NULL, false, NULL);
 		if (res) { IDirect3DSurface9_UnlockRect(temp); goto finished; }
 	}
 	res = IDirect3DSurface9_UnlockRect(temp);
 	if (res) goto finished;
 
 finished:
-	D3D9_FreeResource(&backbuffer);
-	D3D9_FreeResource(&temp);
+	D3D9_FreeResource(backbuffer);
+	D3D9_FreeResource(temp);
 	return res;
 }
 

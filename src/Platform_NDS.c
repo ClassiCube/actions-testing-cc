@@ -8,6 +8,7 @@
 #include "Utils.h"
 #include "Errors.h"
 #include "Options.h"
+#include "Animations.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -17,8 +18,12 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <nds/bios.h>
+#include <nds/interrupts.h>
 #include <nds/timers.h>
 #include <nds/debug.h>
+#include <nds/system.h>
+#include <nds/arm9/dldi.h>
+#include <nds/arm9/sdmmc.h>
 #include <fat.h>
 #include <dswifi9.h>
 #include <netdb.h>
@@ -32,6 +37,7 @@ const cc_result ReturnCode_SocketInProgess  = EINPROGRESS;
 const cc_result ReturnCode_SocketWouldBlock = EWOULDBLOCK;
 const cc_result ReturnCode_DirectoryExists  = EEXIST;
 const char* Platform_AppNameSuffix = " NDS";
+extern cc_bool keyboardOpen;
 
 
 /*########################################################################################################################*
@@ -49,7 +55,7 @@ cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
 cc_uint64 Stopwatch_Measure(void) {
 	u32 raw = cpuGetTiming();
 	// Since counter is only a 32 bit integer, it overflows after a minute or two
-	if (raw < 0x00100000 && last_raw > 0xFFF00000) {
+	if (last_raw > 0xF0000000 && raw < 0x10000000) {
 		base_time += 0x100000000ULL;
 	}
 
@@ -57,7 +63,18 @@ cc_uint64 Stopwatch_Measure(void) {
 	return base_time + raw;
 }
 
-static void DebugNocash(const char* msg, int len) {
+static void LogConsole(const char* msg, int len) {
+	char buffer[256 + 2];
+	len = min(len, 256);
+	
+	Mem_Copy(buffer, msg, len);
+    buffer[len + 0] = '\n';
+	buffer[len + 1] = '\0';
+	
+	fwrite(buffer, 1, len + 1, stdout);
+}
+
+static void LogNocash(const char* msg, int len) {
     // Can only be up to 120 bytes total
 	char buffer[120];
 	len = min(len, 119);
@@ -68,22 +85,14 @@ static void DebugNocash(const char* msg, int len) {
 }
 
 void Platform_Log(const char* msg, int len) {
-	char buffer[256 + 2];
-	len = min(len, 256);
-	
-	Mem_Copy(buffer, msg, len);
-    buffer[len + 0] = '\n';
-	buffer[len + 1] = '\0';
-	
-	fwrite(buffer, 1, len + 1, stdout);
-    DebugNocash(msg, len);
+    LogNocash(msg, len);
+	if (!keyboardOpen) LogConsole(msg, len);
 }
 
-#define UnixTime_TotalMS(time) ((cc_uint64)time.tv_sec * 1000 + UNIX_EPOCH)
-TimeMS DateTime_CurrentUTC_MS(void) {
+TimeMS DateTime_CurrentUTC(void) {
 	struct timeval cur;
 	gettimeofday(&cur, NULL);
-	return UnixTime_TotalMS(cur); // no usec on the DS
+	return (cc_uint64)cur.tv_sec + UNIX_EPOCH_SECONDS;
 }
 
 void DateTime_CurrentLocal(struct DateTime* t) {
@@ -185,6 +194,14 @@ cc_result File_Length(cc_file file, cc_uint32* len) {
 }
 
 static void InitFilesystem(void) {
+	// I don't know why I have to call this function, but if I don't,
+	//  then when running in DSi mode AND an SD card is readable,
+	//  fatInitDefault gets stuck somewhere (in disk_initialize it seems)
+	if (isDSiMode()) {
+ 		const DISC_INTERFACE* sd_io = get_io_dsisd();
+		if (sd_io) sd_io->startup();
+	}
+
     fat_available = fatInitDefault();
 	Platform_ReadonlyFilesystem = !fat_available;
     if (!fat_available) return;
@@ -248,6 +265,8 @@ void Waitable_WaitFor(void* handle, cc_uint32 milliseconds) {
 /*########################################################################################################################*
 *---------------------------------------------------------Socket----------------------------------------------------------*
 *#########################################################################################################################*/
+static cc_bool net_supported = true;
+
 static cc_result ParseHost(const char* host, int port, cc_sockaddr* addrs, int* numValidAddrs) {
 	struct hostent* res = gethostbyname(host);
 	struct sockaddr_in* addr4;
@@ -282,6 +301,8 @@ cc_result Socket_ParseAddress(const cc_string* address, int port, cc_sockaddr* a
 	struct sockaddr_in* addr4 = (struct sockaddr_in*)addrs[0].data;
 	char str[NATIVE_STR_LEN];
 	String_EncodeUtf8(str, address);
+
+	if (!net_supported) return ERR_NOT_SUPPORTED;
 	*numValidAddrs = 1;
 
 	if (inet_aton(str, &addr4->sin_addr) > 0) {
@@ -298,6 +319,7 @@ cc_result Socket_ParseAddress(const cc_string* address, int port, cc_sockaddr* a
 cc_result Socket_Connect(cc_socket* s, cc_sockaddr* addr, cc_bool nonblocking) {
 	struct sockaddr* raw = (struct sockaddr*)addr->data;
 	int res;
+	if (!net_supported) { *s = -1; return ERR_NOT_SUPPORTED; }
 
 	*s = socket(raw->sa_family, SOCK_STREAM, 0);
 	if (*s < 0) return errno;
@@ -360,18 +382,39 @@ cc_result Socket_CheckWritable(cc_socket s, cc_bool* writable) {
 	return res;
 }
 
+static void InitNetworking(void) {
+    if (!Wifi_InitDefault(INIT_ONLY)) {
+        Platform_LogConst("Initing WIFI failed"); 
+		net_supported = false; return;
+    }
+    Wifi_AutoConnect();
+
+    for (int i = 0; i < 300; i++)
+    {
+        int status = Wifi_AssocStatus();
+        if (status == ASSOCSTATUS_ASSOCIATED) return;
+
+        if (status == ASSOCSTATUS_CANNOTCONNECT) {
+            Platform_LogConst("Can't connect to WIFI"); 
+			net_supported = false; return;
+        }
+        swiWaitForVBlank();
+    }
+    Platform_LogConst("Gave up after 300 tries");
+	net_supported = false;
+}
+
 
 /*########################################################################################################################*
 *--------------------------------------------------------Platform---------------------------------------------------------*
 *#########################################################################################################################*/
 void Platform_Init(void) {
 	InitFilesystem();
-    if (!Wifi_InitDefault(WFC_CONNECT)) {
-        Platform_LogConst("Can't connect to WIFI");
-    }
+    InitNetworking();
 
-	cpuStartTiming(1);	
+	cpuStartTiming(1);
 	// TODO: Redesign Drawer2D to better handle this
+	Options_Load();
 	Options_SetBool(OPT_USE_CHAT_FONT, true);
 }
 void Platform_Free(void) { }
@@ -391,6 +434,11 @@ cc_bool Platform_DescribeError(cc_result res, cc_string* dst) {
 	len = String_CalcLen(chars, NATIVE_STR_LEN);
 	String_AppendUtf8(dst, chars, len);
 	return true;
+}
+
+cc_bool Process_OpenSupported = false;
+cc_result Process_StartOpen(const cc_string* args) {
+	return ERR_NOT_SUPPORTED;
 }
 
 

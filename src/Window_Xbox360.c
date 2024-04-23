@@ -10,6 +10,7 @@
 #include "Bitmap.h"
 #include "Errors.h"
 #include "ExtMath.h"
+#include "VirtualKeyboard.h"
 #include <xenos/xenos.h>
 #include <input/input.h>
 #include <usb/usbmain.h>
@@ -81,21 +82,21 @@ struct controller_data_s
 */
 
 static void HandleButtons(struct controller_data_s* pad) {
-	Input_SetNonRepeatable(CCPAD_L, pad->lb);
-	Input_SetNonRepeatable(CCPAD_R, pad->rb);
+	Gamepad_SetButton(CCPAD_L, pad->lb);
+	Gamepad_SetButton(CCPAD_R, pad->rb);
 	
-	Input_SetNonRepeatable(CCPAD_A, pad->a);
-	Input_SetNonRepeatable(CCPAD_B, pad->b);
-	Input_SetNonRepeatable(CCPAD_X, pad->x);
-	Input_SetNonRepeatable(CCPAD_Y, pad->y);
+	Gamepad_SetButton(CCPAD_A, pad->a);
+	Gamepad_SetButton(CCPAD_B, pad->b);
+	Gamepad_SetButton(CCPAD_X, pad->x);
+	Gamepad_SetButton(CCPAD_Y, pad->y);
 	
-	Input_SetNonRepeatable(CCPAD_START,  pad->start);
-	Input_SetNonRepeatable(CCPAD_SELECT, pad->back);
+	Gamepad_SetButton(CCPAD_START,  pad->start);
+	Gamepad_SetButton(CCPAD_SELECT, pad->back);
 	
-	Input_SetNonRepeatable(CCPAD_LEFT,   pad->left);
-	Input_SetNonRepeatable(CCPAD_RIGHT,  pad->right);
-	Input_SetNonRepeatable(CCPAD_UP,     pad->up);
-	Input_SetNonRepeatable(CCPAD_DOWN,   pad->down);
+	Gamepad_SetButton(CCPAD_LEFT,   pad->left);
+	Gamepad_SetButton(CCPAD_RIGHT,  pad->right);
+	Gamepad_SetButton(CCPAD_UP,     pad->up);
+	Gamepad_SetButton(CCPAD_DOWN,   pad->down);
 }
 
 void Window_ProcessEvents(double delta) {
@@ -131,11 +132,11 @@ void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
 	
 #define FB_INDEX(x, y) (((y >> 5)*32*width + ((x >> 5)<<10) + (x&3) + ((y&1)<<2) + (((x&31)>>2)<<3) + (((y&31)>>1)<<6)) ^ ((y&8)<<2))
 
-	for (int y = r.y; y < r.y + r.Height; y++) 
+	for (int y = r.y; y < r.y + r.height; y++) 
 	{
 		cc_uint32* src = bmp->scan0 + y * bmp->width;
 		
-		for (int x = r.x; x < r.x + r.Width; x++) {
+		for (int x = r.x; x < r.x + r.width; x++) {
 			// TODO: Can the uint be copied directly ?
 			int R = BitmapCol_R(src[x]);
 			int G = BitmapCol_G(src[x]);
@@ -154,9 +155,26 @@ void Window_FreeFramebuffer(struct Bitmap* bmp) {
 /*########################################################################################################################*
 *------------------------------------------------------Soft keyboard------------------------------------------------------*
 *#########################################################################################################################*/
-void Window_OpenKeyboard(struct OpenKeyboardArgs* args) { }
-void Window_SetKeyboardText(const cc_string* text) { }
-void Window_CloseKeyboard(void) { /* TODO implement */ }
+void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) {
+	if (Input.Sources & INPUT_SOURCE_NORMAL) return;
+	VirtualKeyboard_Open(args, launcherMode);
+}
+
+void OnscreenKeyboard_SetText(const cc_string* text) {
+	VirtualKeyboard_SetText(text);
+}
+
+void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) {
+	VirtualKeyboard_Display2D(r, bmp);
+}
+
+void OnscreenKeyboard_Draw3D(void) {
+	VirtualKeyboard_Display3D();
+}
+
+void OnscreenKeyboard_Close(void) {
+	VirtualKeyboard_Close();
+}
 
 
 /*########################################################################################################################*

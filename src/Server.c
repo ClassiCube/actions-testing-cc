@@ -67,7 +67,7 @@ int Ping_NextPingId(void) {
 
 	head = (head + 1) % Array_Elems(ping_entries);
 	ping_entries[head].id   = next;
-	ping_entries[head].sent = DateTime_CurrentUTC_MS();
+	ping_entries[head].sent = Stopwatch_Measure();
 	ping_entries[head].recv = 0;
 	
 	ping_head = head;
@@ -79,25 +79,27 @@ void Ping_Update(int id) {
 	for (i = 0; i < Array_Elems(ping_entries); i++) {
 		if (ping_entries[i].id != id) continue;
 
-		ping_entries[i].recv = DateTime_CurrentUTC_MS();
+		ping_entries[i].recv = Stopwatch_Measure();
 		return;
 	}
 }
 
 int Ping_AveragePingMS(void) {
-	int i, measures = 0, totalMs = 0;
+	int i, measures = 0, totalMs;
+	cc_int64 total = 0;
 
 	for (i = 0; i < Array_Elems(ping_entries); i++) {
 		struct PingEntry entry = ping_entries[i];
 		if (!entry.sent || !entry.recv) continue;
 	
-		totalMs += (int)(entry.recv - entry.sent);
+		total += entry.recv - entry.sent;
 		measures++;
 	}
-
 	if (!measures) return 0;
-	/* (recv - send) is time for packet to be sent to server and then sent back. */
-	/* However for ping, only want time to send data to server, so half the total. */
+
+	totalMs = Stopwatch_ElapsedMS(0, total);
+	/* (recv - send) is average time for packet to be sent to server and then sent back. */
+	/* However for ping, only want average time to send data to server, so half the total. */
 	totalMs /= 2;
 	return totalMs / measures;
 }
@@ -128,7 +130,7 @@ static void SPConnection_BeginConnect(void) {
 	Random_SeedFromCurrentTime(&rnd);
 	World_NewMap();
 
-#if defined CC_BUILD_NDS
+#if defined CC_BUILD_NDS || defined CC_BUILD_PS1 || defined CC_BUILD_SATURN
 	World_SetDimensions(16, 16, 16);
 #elif defined CC_BUILD_LOWMEM
 	World_SetDimensions(64, 64, 64);
@@ -136,7 +138,7 @@ static void SPConnection_BeginConnect(void) {
 	World_SetDimensions(128, 64, 128);
 #endif
 
-#if defined CC_BUILD_N64 || defined CC_BUILD_NDS
+#if defined CC_BUILD_N64 || defined CC_BUILD_NDS || defined CC_BUILD_PS1 || defined CC_BUILD_SATURN
 	Gen_Active = &FlatgrassGen;
 #else
 	Gen_Active = &NotchyGen;
@@ -223,10 +225,12 @@ static void SPConnection_Init(void) {
 *--------------------------------------------------Multiplayer connection-------------------------------------------------*
 *#########################################################################################################################*/
 static cc_socket net_socket = -1;
+static cc_result net_writeFailure;
+static void OnClose(void);
+
+#ifdef CC_BUILD_NETWORKING
 static cc_uint8  net_readBuffer[4096 * 5];
 static cc_uint8* net_readCurrent;
-
-static cc_result net_writeFailure;
 static double net_lastPacket;
 static cc_uint8 lastOpcode;
 
@@ -234,7 +238,6 @@ static cc_bool net_connecting;
 static double net_connectTimeout;
 #define NET_TIMEOUT_SECS 15
 
-static void OnClose(void);
 static void MPConnection_FinishConnect(void) {
 	net_connecting = false;
 	Event_RaiseVoid(&NetEvents.Connected);
@@ -475,8 +478,14 @@ static void MPConnection_Init(void) {
 	Server.SendData     = MPConnection_SendData;
 	net_readCurrent     = net_readBuffer;
 }
+#else
+static void MPConnection_Init(void) { SPConnection_Init(); }
+#endif
 
 
+/*########################################################################################################################*
+*---------------------------------------------------Component interface---------------------------------------------------*
+*#########################################################################################################################*/
 static void OnNewMap(void) {
 	int i;
 	if (Server.IsSinglePlayer) return;

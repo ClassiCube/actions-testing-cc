@@ -36,7 +36,6 @@ void Window_Init(void) {
 	
 	DisplayInfo.Width  = top_width; 
 	DisplayInfo.Height = top_height;
-	DisplayInfo.Depth  = 4; // 32 bit
 	DisplayInfo.ScaleX = 0.5f;
 	DisplayInfo.ScaleY = 0.5f;
 	
@@ -45,6 +44,7 @@ void Window_Init(void) {
 	Window_Main.Focused = true;
 	Window_Main.Exists  = true;
 
+	Window_Main.SoftKeyboard = SOFT_KEYBOARD_RESIZE;
 	Input_SetTouchMode(true);
 	Gui_SetTouchUI(true);
 	Input.Sources = INPUT_SOURCE_GAMEPAD;
@@ -90,57 +90,49 @@ void Window_RequestClose(void) {
 *----------------------------------------------------Input processing-----------------------------------------------------*
 *#########################################################################################################################*/
 static void HandleButtons(u32 mods) {
-	Input_SetNonRepeatable(CCPAD_L, mods & KEY_L);
-	Input_SetNonRepeatable(CCPAD_R, mods & KEY_R);
+	Gamepad_SetButton(CCPAD_L, mods & KEY_L);
+	Gamepad_SetButton(CCPAD_R, mods & KEY_R);
 	
-	Input_SetNonRepeatable(CCPAD_A, mods & KEY_A);
-	Input_SetNonRepeatable(CCPAD_B, mods & KEY_B);
-	Input_SetNonRepeatable(CCPAD_X, mods & KEY_X);
-	Input_SetNonRepeatable(CCPAD_Y, mods & KEY_Y);
+	Gamepad_SetButton(CCPAD_A, mods & KEY_A);
+	Gamepad_SetButton(CCPAD_B, mods & KEY_B);
+	Gamepad_SetButton(CCPAD_X, mods & KEY_X);
+	Gamepad_SetButton(CCPAD_Y, mods & KEY_Y);
 	
-	Input_SetNonRepeatable(CCPAD_START,  mods & KEY_START);
-	Input_SetNonRepeatable(CCPAD_SELECT, mods & KEY_SELECT);
+	Gamepad_SetButton(CCPAD_START,  mods & KEY_START);
+	Gamepad_SetButton(CCPAD_SELECT, mods & KEY_SELECT);
 	
-	Input_SetNonRepeatable(CCPAD_LEFT,   mods & KEY_DLEFT);
-	Input_SetNonRepeatable(CCPAD_RIGHT,  mods & KEY_DRIGHT);
-	Input_SetNonRepeatable(CCPAD_UP,     mods & KEY_DUP);
-	Input_SetNonRepeatable(CCPAD_DOWN,   mods & KEY_DDOWN);
+	Gamepad_SetButton(CCPAD_LEFT,   mods & KEY_DLEFT);
+	Gamepad_SetButton(CCPAD_RIGHT,  mods & KEY_DRIGHT);
+	Gamepad_SetButton(CCPAD_UP,     mods & KEY_DUP);
+	Gamepad_SetButton(CCPAD_DOWN,   mods & KEY_DDOWN);
 	
-	Input_SetNonRepeatable(CCPAD_ZL, mods & KEY_ZL);
-	Input_SetNonRepeatable(CCPAD_ZR, mods & KEY_ZR);
+	Gamepad_SetButton(CCPAD_ZL, mods & KEY_ZL);
+	Gamepad_SetButton(CCPAD_ZR, mods & KEY_ZR);
 }
 
-static void ProcessJoystickInput(circlePosition* pos, double delta) {
-	float scale = (delta * 60.0) / 8.0f;
-
+#define AXIS_SCALE 8.0f
+static void ProcessCircleInput(int axis, circlePosition* pos, double delta) {
 	// May not be exactly 0 on actual hardware
-	if (Math_AbsI(pos->dx) <= 16) pos->dx = 0;
-	if (Math_AbsI(pos->dy) <= 16) pos->dy = 0;
+	if (Math_AbsI(pos->dx) <= 24) pos->dx = 0;
+	if (Math_AbsI(pos->dy) <= 24) pos->dy = 0;
 		
-	Event_RaiseRawMove(&ControllerEvents.RawMoved, pos->dx * scale, -pos->dy * scale);
+	Gamepad_SetAxis(axis, pos->dx / AXIS_SCALE, -pos->dy / AXIS_SCALE, delta);
 }
 
 static void ProcessTouchInput(int mods) {
-	static int currX, currY;  // current touch position
 	touchPosition touch;
 	hidTouchRead(&touch);
-	if (hidKeysDown() & KEY_TOUCH) {  // stylus went down
-		currX = touch.px;
-		currY = touch.py;
-		Input_AddTouch(0, currX, currY);
-	}
-	else if (mods & KEY_TOUCH) {  // stylus is down
-		currX = touch.px;
-		currY = touch.py;
-		Input_UpdateTouch(0, currX, currY);
-	}
-	else if (hidKeysUp() & KEY_TOUCH) {  // stylus was lifted
-		Input_RemoveTouch(0, currX, currY);
+
+	if (mods & KEY_TOUCH) {
+		Input_AddTouch(0,    touch.px,      touch.py);
+	} else if (hidKeysUp() & KEY_TOUCH) {
+		Input_RemoveTouch(0, Pointers[0].x, Pointers[0].y);
 	}
 }
 
 void Window_ProcessEvents(double delta) {
 	hidScanInput();
+	Input.JoystickMovement = false;
 
 	if (!aptMainLoop()) {
 		Window_Main.Exists = false;
@@ -153,16 +145,18 @@ void Window_ProcessEvents(double delta) {
 
 	ProcessTouchInput(mods);
 	
-	if (Input.RawMode) {
-		circlePosition pos;
-		hidCircleRead(&pos);
-		ProcessJoystickInput(&pos, delta);
-	}
-	if (Input.RawMode && irrst_result == 0) {
-		circlePosition pos;
+	circlePosition hid_pos;
+	hidCircleRead(&hid_pos);
+
+	if (irrst_result == 0) {
+		circlePosition stk_pos;
 		irrstScanInput();
-		irrstCstickRead(&pos);
-		ProcessJoystickInput(&pos, delta);
+		irrstCstickRead(&stk_pos);
+		
+		ProcessCircleInput(PAD_AXIS_RIGHT, &stk_pos, delta);
+		ProcessCircleInput(PAD_AXIS_LEFT,  &hid_pos, delta);
+	} else {
+		ProcessCircleInput(PAD_AXIS_RIGHT, &hid_pos, delta);
 	}
 }
 
@@ -191,8 +185,8 @@ void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
 	// DST X = 0 to 240
 	// DST Y = 0 to 400
 
-	for (int y = r.y; y < r.y + r.Height; y++)
-		for (int x = r.x; x < r.x + r.Width; x++)
+	for (int y = r.y; y < r.y + r.height; y++)
+		for (int x = r.x; x < r.x + r.width; x++)
 	{
 		BitmapCol color = Bitmap_GetPixel(bmp, x, y);
 		int addr   = (width - 1 - y + x * width) * 3; // TODO -1 or not
@@ -226,9 +220,11 @@ static void OnscreenTextChanged(const char* text) {
 	String_AppendUtf8(&tmp, text, String_Length(text));
     
 	Event_RaiseString(&InputEvents.TextChanged, &tmp);
+	Input_SetPressed(CCKEY_ENTER);
+	Input_SetReleased(CCKEY_ENTER);
 }
 
-void Window_OpenKeyboard(struct OpenKeyboardArgs* args) {
+void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) {
 	const char* btnText = args->type & KEYBOARD_FLAG_SEND ? "Send" : "Enter";
 	char input[NATIVE_STR_LEN]  = { 0 };
 	char output[NATIVE_STR_LEN] = { 0 };
@@ -236,7 +232,7 @@ void Window_OpenKeyboard(struct OpenKeyboardArgs* args) {
 	String_EncodeUtf8(input, args->text);
 	
 	int mode = args->type & 0xFF;
-	int type = (mode == KEYBOARD_TYPE_NUMBER || mode == KEYBOARD_TYPE_INTEGER) ? SWKBD_TYPE_NUMPAD : SWKBD_TYPE_WESTERN;
+	int type = (mode == KEYBOARD_TYPE_INTEGER || mode == KEYBOARD_TYPE_NUMBER) ? SWKBD_TYPE_NUMPAD : SWKBD_TYPE_WESTERN;
 	
 	swkbdInit(&swkbd, type, 3, -1);
 	swkbdSetInitialText(&swkbd, input);
@@ -245,18 +241,26 @@ void Window_OpenKeyboard(struct OpenKeyboardArgs* args) {
 	//swkbdSetButton(&swkbd, SWKBD_BUTTON_RIGHT, btnText, true);
 	swkbdSetButton(&swkbd, SWKBD_BUTTON_CONFIRM, btnText, true);
 	
-	if (type == KEYBOARD_TYPE_PASSWORD)
+	if (mode == KEYBOARD_TYPE_INTEGER) {
+		swkbdSetNumpadKeys(&swkbd, '-', 0);
+	} else if (mode == KEYBOARD_TYPE_NUMBER) {
+		swkbdSetNumpadKeys(&swkbd, '-', '.');
+	}
+	
+	if (mode == KEYBOARD_TYPE_PASSWORD)
 		swkbdSetPasswordMode(&swkbd, SWKBD_PASSWORD_HIDE_DELAY);
 	if (args->multiline)
 		swkbdSetFeatures(&swkbd, SWKBD_MULTILINE);
 		
-	// TODO filter callbacks and Window_Setkeyboardtext ??
+	// TODO filter callbacks and OnscreenKeyboard_SetText ??
 	int btn = swkbdInputText(&swkbd, output, sizeof(output));
 	if (btn != SWKBD_BUTTON_CONFIRM) return;
 	OnscreenTextChanged(output);
 }
-void Window_SetKeyboardText(const cc_string* text) { }
-void Window_CloseKeyboard(void) { /* TODO implement */ }
+void OnscreenKeyboard_SetText(const cc_string* text) { }
+void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) { }
+void OnscreenKeyboard_Draw3D(void) { }
+void OnscreenKeyboard_Close(void) { /* TODO implement */ }
 
 
 /*########################################################################################################################*

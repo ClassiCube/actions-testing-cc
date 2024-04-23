@@ -39,16 +39,16 @@ void Platform_Log(const char* msg, int len) {
 	OutputDebugStringA(tmp);
 }
 
-#define FILETIME_EPOCH 50491123200000ULL
-#define FILETIME_UNIX_EPOCH 11644473600LL
-#define FileTime_TotalMS(time)  ((time / 10000)    + FILETIME_EPOCH)
-#define FileTime_UnixTime(time) ((time / 10000000) - FILETIME_UNIX_EPOCH)
-TimeMS DateTime_CurrentUTC_MS(void) {
+#define FILETIME_EPOCH      50491123200ULL
+#define FILETIME_UNIX_EPOCH 11644473600ULL
+#define FileTime_TotalSecs(time) ((time / 10000000) + FILETIME_EPOCH)
+#define FileTime_UnixTime(time)  ((time / 10000000) - FILETIME_UNIX_EPOCH)
+TimeMS DateTime_CurrentUTC(void) {
 	LARGE_INTEGER ft;
 	
 	KeQuerySystemTime(&ft);
 	/* in 100 nanosecond units, since Jan 1 1601 */
-	return FileTime_TotalMS(ft.QuadPart);
+	return FileTime_TotalSecs(ft.QuadPart);
 }
 
 void DateTime_CurrentLocal(struct DateTime* t) {
@@ -64,10 +64,10 @@ void DateTime_CurrentLocal(struct DateTime* t) {
 }
 
 /* TODO: check this is actually accurate */
-static cc_uint64 sw_freqMul = 1, sw_freqDiv = 1;
+static cc_uint64 sw_freqDiv = 1;
 cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
 	if (end < beg) return 0;
-	return ((end - beg) * sw_freqMul) / sw_freqDiv;
+	return ((end - beg) * 1000000ULL) / sw_freqDiv;
 }
 
 cc_uint64 Stopwatch_Measure(void) {
@@ -76,9 +76,7 @@ cc_uint64 Stopwatch_Measure(void) {
 
 static void Stopwatch_Init(void) {
 	ULONGLONG freq = KeQueryPerformanceFrequency();
-
-	sw_freqMul = 1000 * 1000;
-	sw_freqDiv = freq;
+	sw_freqDiv     = freq;
 }
 
 
@@ -415,6 +413,11 @@ void Platform_Free(void) {
 
 cc_bool Platform_DescribeError(cc_result res, cc_string* dst) {
 	return false;
+}
+
+cc_bool Process_OpenSupported = false;
+cc_result Process_StartOpen(const cc_string* args) {
+	return ERR_NOT_SUPPORTED;
 }
 
 

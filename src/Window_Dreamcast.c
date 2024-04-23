@@ -10,6 +10,7 @@
 #include "Bitmap.h"
 #include "Errors.h"
 #include "ExtMath.h"
+#include "VirtualKeyboard.h"
 #include <kos.h>
 static cc_bool launcherMode;
 cc_bool window_inited;
@@ -20,7 +21,6 @@ struct _WindowData WindowInfo;
 void Window_Init(void) {
 	DisplayInfo.Width  = vid_mode->width;
 	DisplayInfo.Height = vid_mode->height;
-	DisplayInfo.Depth  = 4; // 32 bit
 	DisplayInfo.ScaleX = 1;
 	DisplayInfo.ScaleY = 1;
 	
@@ -32,6 +32,7 @@ void Window_Init(void) {
 	Input.Sources = INPUT_SOURCE_GAMEPAD;
 	DisplayInfo.ContentOffsetX = 10;
 	DisplayInfo.ContentOffsetY = 20;
+	Window_Main.SoftKeyboard   = SOFT_KEYBOARD_VIRTUAL;
 	
 	vid_set_mode(DEFAULT_VID_MODE, DEFAULT_PIXEL_MODE);
 	vid_flip(0);
@@ -175,34 +176,34 @@ static void ProcessKeyboardInput(void) {
 static void HandleButtons(int mods) {
 	// TODO CONT_Z
       
-	Input_SetNonRepeatable(CCPAD_A, mods & CONT_A);
-	Input_SetNonRepeatable(CCPAD_B, mods & CONT_B);
-	Input_SetNonRepeatable(CCPAD_X, mods & CONT_X);
-	Input_SetNonRepeatable(CCPAD_Y, mods & CONT_Y);
+	Gamepad_SetButton(CCPAD_A, mods & CONT_A);
+	Gamepad_SetButton(CCPAD_B, mods & CONT_B);
+	Gamepad_SetButton(CCPAD_X, mods & CONT_X);
+	Gamepad_SetButton(CCPAD_Y, mods & CONT_Y);
       
-	Input_SetNonRepeatable(CCPAD_START,  mods & CONT_START);
-	Input_SetNonRepeatable(CCPAD_SELECT, mods & CONT_D);
+	Gamepad_SetButton(CCPAD_START,  mods & CONT_START);
+	Gamepad_SetButton(CCPAD_SELECT, mods & CONT_D);
 
-	Input_SetNonRepeatable(CCPAD_LEFT,   mods & CONT_DPAD_LEFT);
-	Input_SetNonRepeatable(CCPAD_RIGHT,  mods & CONT_DPAD_RIGHT);
-	Input_SetNonRepeatable(CCPAD_UP,     mods & CONT_DPAD_UP);
-	Input_SetNonRepeatable(CCPAD_DOWN,   mods & CONT_DPAD_DOWN);
+	Gamepad_SetButton(CCPAD_LEFT,   mods & CONT_DPAD_LEFT);
+	Gamepad_SetButton(CCPAD_RIGHT,  mods & CONT_DPAD_RIGHT);
+	Gamepad_SetButton(CCPAD_UP,     mods & CONT_DPAD_UP);
+	Gamepad_SetButton(CCPAD_DOWN,   mods & CONT_DPAD_DOWN);
+}
+
+#define AXIS_SCALE 8.0f
+static void HandleJoystick(int axis, int x, int y, double delta) {
+	if (Math_AbsI(x) <= 8) x = 0;
+	if (Math_AbsI(y) <= 8) y = 0;	
+	
+	Gamepad_SetAxis(axis, x / AXIS_SCALE, y / AXIS_SCALE, delta);
 }
 
 static void HandleController(cont_state_t* state, double delta) {
-	Input_SetNonRepeatable(CCPAD_L, state->ltrig > 10);
-	Input_SetNonRepeatable(CCPAD_R, state->rtrig > 10);
+	Gamepad_SetButton(CCPAD_L, state->ltrig > 10);
+	Gamepad_SetButton(CCPAD_R, state->rtrig > 10);
 	// TODO CONT_Z, joysticks
-	// TODO: verify values are right
-      
-	if (Input.RawMode) {
-		float scale = (delta * 60.0) / 8.0f;
-		int dx = state->joyx, dy = state->joyy;
-		if (Math_AbsI(dx) <= 8) dx = 0;
-		if (Math_AbsI(dy) <= 8) dy = 0;
-		
-		Event_RaiseRawMove(&ControllerEvents.RawMoved, dx * scale, dy * scale);
-	}
+	// TODO: verify values are right     
+	HandleJoystick(PAD_AXIS_RIGHT, state->joyx, state->joyy, delta);
 }
 
 static void ProcessControllerInput(double delta) {
@@ -264,12 +265,12 @@ void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
 	//	https://dcemulation.org/phpBB/viewtopic.php?t=43214
 	vid_waitvbl();
 	
-	for (int y = r.y; y < r.y + r.Height; y++)
+	for (int y = r.y; y < r.y + r.height; y++)
 	{
 		BitmapCol* src = Bitmap_GetRow(bmp, y);
 		uint16_t*  dst = vram_s + vid_mode->width * y;
 		
-		for (int x = r.x; x < r.x + r.Width; x++)
+		for (int x = r.x; x < r.x + r.width; x++)
 		{
 			BitmapCol color = src[x];
 			// 888 to 565 (discard least significant bits)
@@ -286,9 +287,26 @@ void Window_FreeFramebuffer(struct Bitmap* bmp) {
 /*########################################################################################################################*
 *------------------------------------------------------Soft keyboard------------------------------------------------------*
 *#########################################################################################################################*/
-void Window_OpenKeyboard(struct OpenKeyboardArgs* args) { /* TODO implement */ }
-void Window_SetKeyboardText(const cc_string* text) { }
-void Window_CloseKeyboard(void) { /* TODO implement */ }
+void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) { 
+	if (Input.Sources & INPUT_SOURCE_NORMAL) return;
+	VirtualKeyboard_Open(args, launcherMode);
+}
+
+void OnscreenKeyboard_SetText(const cc_string* text) {
+	VirtualKeyboard_SetText(text);
+}
+
+void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) {
+	VirtualKeyboard_Display2D(r, bmp);
+}
+
+void OnscreenKeyboard_Draw3D(void) {
+	VirtualKeyboard_Display3D();
+}
+
+void OnscreenKeyboard_Close(void) {
+	VirtualKeyboard_Close();
+}
 
 
 /*########################################################################################################################*

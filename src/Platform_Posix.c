@@ -61,6 +61,12 @@ cc_bool Platform_SingleProcess;
 /* TODO: Use load_image/resume_thread instead of fork */
 /* Otherwise opening browser never works because fork fails */
 #include <kernel/image.h>
+#elif defined CC_BUILD_OS2
+#include <libcx/net.h>
+#define INCL_DOS
+#define INCL_DOSERRORS
+#define INCL_PM
+#include <os2.h>
 #endif
 
 
@@ -103,15 +109,14 @@ void Platform_Log(const char* msg, int len) {
 }
 #endif
 
-#define UnixTime_TotalMS(time) ((cc_uint64)time.tv_sec * 1000 + UNIX_EPOCH + (time.tv_usec / 1000))
-TimeMS DateTime_CurrentUTC_MS(void) {
+TimeMS DateTime_CurrentUTC(void) {
 	struct timeval cur;
 	gettimeofday(&cur, NULL);
-	return UnixTime_TotalMS(cur);
+	return (cc_uint64)cur.tv_sec + UNIX_EPOCH_SECONDS;
 }
 
 void DateTime_CurrentLocal(struct DateTime* t) {
-	struct timeval cur; 
+	struct timeval cur;
 	struct tm loc_time;
 	gettimeofday(&cur, NULL);
 	localtime_r(&cur.tv_sec, &loc_time);
@@ -264,18 +269,31 @@ cc_result Directory_Enum(const cc_string* dirPath, void* obj, Directory_EnumCall
 static cc_result File_Do(cc_file* file, const cc_string* path, int mode) {
 	char str[NATIVE_STR_LEN];
 	String_EncodeUtf8(str, path);
+
 	*file = open(str, mode, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	return *file == -1 ? errno : 0;
 }
 
 cc_result File_Open(cc_file* file, const cc_string* path) {
+#if !defined CC_BUILD_OS2
 	return File_Do(file, path, O_RDONLY);
+#else
+	return File_Do(file, path, O_RDONLY | O_BINARY);
+#endif
 }
 cc_result File_Create(cc_file* file, const cc_string* path) {
+#if !defined CC_BUILD_OS2
 	return File_Do(file, path, O_RDWR | O_CREAT | O_TRUNC);
+#else
+	return File_Do(file, path, O_RDWR | O_CREAT | O_TRUNC | O_BINARY);
+#endif
 }
 cc_result File_OpenOrCreate(cc_file* file, const cc_string* path) {
+#if !defined CC_BUILD_OS2
 	return File_Do(file, path, O_RDWR | O_CREAT);
+#else
+	return File_Do(file, path, O_RDWR | O_CREAT | O_BINARY);
+#endif
 }
 
 cc_result File_Read(cc_file file, void* data, cc_uint32 count, cc_uint32* bytesRead) {
@@ -327,7 +345,7 @@ static void* ExecThread(void* param) {
 }
 #else
 static void* ExecThread(void* param) {
-	((Thread_StartFunc)param)(); 
+	((Thread_StartFunc)param)();
 	return NULL;
 }
 #endif
@@ -345,10 +363,15 @@ void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char*
 	if (res) Logger_Abort2(res, "Creating thread");
 	pthread_attr_destroy(&attrs);
 	
-	#if defined CC_BUILD_LINUX || defined CC_BUILD_HAIKU
-	extern int pthread_setname_np(pthread_t thread, const char *name);
+#if defined CC_BUILD_LINUX || defined CC_BUILD_HAIKU
+	extern int pthread_setname_np(pthread_t thread, const char* name);
 	pthread_setname_np(*ptr, name);
-	#endif
+#elif defined CC_BUILD_FREEBSD || defined CC_BUILD_OPENBSD
+	extern int pthread_set_name_np(pthread_t thread, const char* name);
+	pthread_set_name_np(*ptr, name);
+#elif defined CC_BUILD_NETBSD
+	pthread_setname_np(*ptr, "%s", name);
+#endif
 }
 
 void Thread_Detach(void* handle) {
@@ -477,7 +500,7 @@ static void FontDirCallback(const cc_string* path, void* obj) {
 	SysFonts_Register(path);
 }
 
-void Platform_LoadSysFonts(void) { 
+void Platform_LoadSysFonts(void) {
 	int i;
 #if defined CC_BUILD_ANDROID
 	static const cc_string dirs[] = {
@@ -514,6 +537,11 @@ void Platform_LoadSysFonts(void) {
 	static const cc_string dirs[] = {
 		String_FromConst("/res/fonts")
 	};
+#elif defined CC_BUILD_OS2
+	static const cc_string dirs[] = {
+		String_FromConst("/@unixroot/usr/share/fonts"),
+		String_FromConst("/@unixroot/usr/local/share/fonts")
+	};
 #else
 	static const cc_string dirs[] = {
 		String_FromConst("/usr/share/fonts"),
@@ -529,6 +557,10 @@ void Platform_LoadSysFonts(void) {
 /*########################################################################################################################*
 *---------------------------------------------------------Socket----------------------------------------------------------*
 *#########################################################################################################################*/
+#if defined CC_BUILD_OS2
+#undef AF_INET6
+#endif
+
 union SocketAddress {
 	struct sockaddr raw;
 	struct sockaddr_in  v4;
@@ -559,14 +591,14 @@ static cc_result ParseHost(const char* host, int port, cc_sockaddr* addrs, int* 
 	if (res) return res;
 
 	/* Prefer IPv4 addresses first */
-	for (cur = result; cur && i < SOCKET_MAX_ADDRS; cur = cur->ai_next) 
+	for (cur = result; cur && i < SOCKET_MAX_ADDRS; cur = cur->ai_next)
 	{
 		if (cur->ai_family != AF_INET) continue;
 		Mem_Copy(addrs[i].data, cur->ai_addr, cur->ai_addrlen);
 		addrs[i].size = cur->ai_addrlen; i++;
 	}
 	
-	for (cur = result; cur && i < SOCKET_MAX_ADDRS; cur = cur->ai_next) 
+	for (cur = result; cur && i < SOCKET_MAX_ADDRS; cur = cur->ai_next)
 	{
 		if (cur->ai_family == AF_INET) continue;
 		Mem_Copy(addrs[i].data, cur->ai_addr, cur->ai_addrlen);
@@ -761,6 +793,81 @@ cc_result Process_StartOpen(const cc_string* args) {
 }
 #elif defined CC_BUILD_HAIKU || defined CC_BUILD_BEOS
 /* Implemented in interop_BeOS.cpp */
+#elif defined CC_BUILD_OS2
+inline static void ShowErrorMessage(const char *url) {
+	static char errorMsg[] = "Could not open browser. Please go to: ";
+	cc_string message = String_Init(errorMsg, strlen(errorMsg), 500);
+	String_AppendConst(&message, url);
+	Logger_DialogWarn(&message);
+}
+
+cc_result Process_StartOpen(const cc_string* args) {
+	char str[NATIVE_STR_LEN];
+	APIRET rc;
+	UCHAR path[CCHMAXPATH], params[100], parambuffer[500], *paramptr;
+	UCHAR userPath[CCHMAXPATH], sysPath[CCHMAXPATH];
+	PRFPROFILE profile = { sizeof(userPath), userPath, sizeof(sysPath), sysPath };
+	HINI os2Ini;
+	HAB hAnchor = WinQueryAnchorBlock(WinQueryActiveWindow(HWND_DESKTOP));
+	RESULTCODES result = { 0 };
+   PROGDETAILS details;
+	
+	// We get URL
+	String_EncodeUtf8(str, args);
+	
+	// Initialize buffers
+	Mem_Set(path, 0, sizeof(path));
+	Mem_Set(parambuffer, 0, sizeof(parambuffer));
+	Mem_Set(params, 0, sizeof(params));
+
+	// We have to look in the OS/2 configuration for the default browser.
+	// First step: Find the configuration files
+ 	if (!PrfQueryProfile(hAnchor, &profile)) {
+		ShowErrorMessage(str);
+		return 0;
+	}
+	
+	// Second step: Open the configuration files and read exe path and parameters
+	os2Ini = PrfOpenProfile(hAnchor, userPath);
+	if (os2Ini == NULLHANDLE) {
+		ShowErrorMessage(str);
+		return 0;
+	}
+	if (!PrfQueryProfileString(os2Ini, "WPURLDEFAULTSETTINGS", "DefaultBrowserExe",
+		  NULL, path, sizeof(path))) {
+		PrfCloseProfile(os2Ini);
+		ShowErrorMessage(str);
+		return 0;
+	}
+
+	PrfQueryProfileString(os2Ini, "WPURLDEFAULTSETTINGS", "DefaultBrowserParameters",
+		NULL, params, sizeof(params));
+	PrfCloseProfile(os2Ini);
+
+	// concat arguments
+	if (strlen(params) > 0) strncat(params, " ", 20);
+	strncat(params, str, sizeof(str));
+
+	// Build parameter buffer
+	strcpy(parambuffer, "Browser");
+	paramptr = &parambuffer[strlen(parambuffer)+1];
+	// copy params to buffer
+	strcpy(paramptr, params);
+	printf("params %p %p %s\n", parambuffer, paramptr, paramptr);
+	paramptr += strlen(params) + 1;
+	// To be sure: Terminate parameter list with NULL
+	*paramptr = '\0';
+
+	// Last step: Execute detached browser
+   rc = DosExecPgm(userPath, sizeof(userPath), EXEC_ASYNC,
+		parambuffer, NULL, &result, path);
+	if (rc != NO_ERROR) {
+		ShowErrorMessage(str);
+		return 0;
+	}
+	
+	return 0;
+}
 #else
 cc_result Process_StartOpen(const cc_string* args) {
 	char str[NATIVE_STR_LEN];
@@ -859,6 +966,16 @@ static cc_result Process_RawGetExePath(char* path, int* len) {
 	/* Maybe use PIOCOPENM from https://nixdoc.net/man-pages/IRIX/man4/proc.4.html */
 	Mem_Copy(path, file.buffer, file.length);
 	*len = file.length;
+	return 0;
+}
+#elif defined CC_BUILD_OS2
+static cc_result Process_RawGetExePath(char* path, int* len) {
+	PPIB pib;
+	DosGetInfoBlocks(NULL, &pib);
+	if (pib && pib->pib_pchcmd) {
+		Mem_Copy(path, pib->pib_pchcmd, strlen(pib->pib_pchcmd));
+		*len = strlen(pib->pib_pchcmd);
+	}
 	return 0;
 }
 #endif
@@ -1014,7 +1131,7 @@ const cc_string DynamicLib_Ext = String_FromConst(".dylib");
 void* DynamicLib_Load2(const cc_string* path) {
 	char str[NATIVE_STR_LEN];
 	String_EncodeUtf8(str, path);
-	return NSAddImage(str, NSADDIMAGE_OPTION_WITH_SEARCHING | 
+	return NSAddImage(str, NSADDIMAGE_OPTION_WITH_SEARCHING |
 							NSADDIMAGE_OPTION_RETURN_ON_ERROR);
 }
 
@@ -1060,7 +1177,8 @@ void* DynamicLib_Load2(const cc_string* path) {
 }
 
 void* DynamicLib_Get2(void* lib, const char* name) {
-	return dlsym(lib, name);
+	void *result = dlsym(lib, name);
+	return result;
 }
 
 cc_bool DynamicLib_DescribeError(cc_string* dst) {
@@ -1140,7 +1258,7 @@ void Platform_Init(void) {
 	Platform_SingleProcess = true;
 	#endif
 	
-	Platform_InitPosix(); 
+	Platform_InitPosix();
 }
 #endif
 
@@ -1176,7 +1294,7 @@ static void DecipherBlock(cc_uint32* v, const cc_uint32* key) {
 }
 
 #define ENC1 0xCC005EC0
-#define ENC2 0x0DA4A0DE 
+#define ENC2 0x0DA4A0DE
 #define ENC3 0xC0DED000
 #define MACHINEID_LEN 32
 #define ENC_SIZE 8 /* 2 32 bit ints per block */
@@ -1227,7 +1345,7 @@ static cc_result GetMachineID(cc_uint32* key) {
 #ifdef kIOPlatformUUIDKey
     registry = IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/");
     if (!registry) return ERR_NOT_SUPPORTED;
-    
+
 	devID = IORegistryEntryCreateCFProperty(registry, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
 	if (devID && CFStringGetCString(devID, tmp, sizeof(tmp), kCFStringEncodingUTF8)) {
 		DecodeMachineID(tmp, String_Length(tmp), key);	
@@ -1235,13 +1353,13 @@ static cc_result GetMachineID(cc_uint32* key) {
 #else
     registry = IOServiceGetMatchingService(kIOMasterPortDefault,
                                            IOServiceMatching("IOPlatformExpertDevice"));
-    
+
     devID = IORegistryEntryCreateCFProperty(registry, CFSTR(kIOPlatformSerialNumberKey), kCFAllocatorDefault, 0);
     if (devID && CFStringGetCString(devID, tmp, sizeof(tmp), kCFStringEncodingUTF8)) {
         Mem_Copy(key, tmp, MACHINEID_LEN / 2);
     }
 #endif
-    
+
 	if (devID) CFRelease(devID);
 	IOObjectRelease(registry);
 	return tmp[0] ? 0 : ERR_NOT_SUPPORTED;
@@ -1304,10 +1422,10 @@ extern void GetDeviceUUID(cc_string* str);
 static cc_result GetMachineID(cc_uint32* key) {
     cc_string str; char strBuffer[STRING_SIZE];
     String_InitArray(str, strBuffer);
-    
+
     GetDeviceUUID(&str);
     if (!str.length) return ERR_NOT_SUPPORTED;
-    
+
     DecodeMachineID(strBuffer, str.length, key);
     return 0;
 }
