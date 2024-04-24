@@ -17,7 +17,6 @@ jobs:
         id: compile
         run: |
           make saturn
-          find .
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
@@ -28,5 +27,5 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube-dc.cdi'
-          DEST_NAME: 'ClassiCube-dc.cdi'
+          SOURCE_FILE: 'ClassiCube-saturn.iso'
+          DEST_NAME: 'ClassiCube-saturn.iso'
