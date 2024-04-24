@@ -15,8 +15,9 @@ jobs:
         id: compile
         run: |
           cd ios
-          xcodebuild -sdk iphoneos -configuration Debug CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          xcodebuild -sdk iphoneos -configuration Release CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
           find .
+          zip -r cc.ipa Release-iphoneos
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
@@ -27,5 +28,5 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'src/cc-nix32-gl2'
-          DEST_NAME: 'ClassiCube-Linux32-ModernGL'
+          SOURCE_FILE: 'cc.ipa'
+          DEST_NAME: 'cc.ipa'
