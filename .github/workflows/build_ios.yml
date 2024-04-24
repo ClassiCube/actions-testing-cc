@@ -16,8 +16,8 @@ jobs:
         run: |
           cd ios
           xcodebuild -sdk iphoneos -configuration Release CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
-          find .
-          zip -r cc.ipa build/Release-iphoneos
+          cd build/Release-iphoneos
+          zip -r cc.ipa ClassiCube.app
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
@@ -28,5 +28,5 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ios/cc.ipa'
+          SOURCE_FILE: 'ios/build/Release-iphoneos/cc.ipa'
           DEST_NAME: 'cc.ipa'
