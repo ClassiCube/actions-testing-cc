@@ -17,7 +17,9 @@ jobs:
           cd ios
           xcodebuild -sdk iphoneos -configuration Release CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
           cd build/Release-iphoneos
-          zip -r cc.ipa ClassiCube.app
+          mkdir Payload
+          mv ClassiCube.app Payload/ClassiCube.app
+          zip -r cc.ipa Payload
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
