@@ -28,5 +28,5 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'cc.ipa'
+          SOURCE_FILE: 'ios/cc.ipa'
           DEST_NAME: 'cc.ipa'
