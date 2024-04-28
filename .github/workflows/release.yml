@@ -20,28 +20,16 @@ jobs:
           wget https://www.classicube.net/static/audio.zip
           
       # Download windows artifacts
-      - name: Download 32 bit windows
-        uses: dawidd6/action-download-artifact@v3
-        with:
-          workflow: build_windows.yml
-          name: ClassiCube-Win32-Direct3D9.exe
-      - name: Download 64 bit windows
-        uses: dawidd6/action-download-artifact@v3
-        with:
-          workflow: build_windows.yml
-          name: ClassiCube-Win64-Direct3D9.exe
+      - name: Retrieve Windows binaries
+        run: |
+          wget https://cdn.classicube.net/client/latest/ClassiCube.64.exe -O cc-w64.exe
+          wget https://cdn.classicube.net/client/latest/ClassiCube.exe -O cc-w32.exe
           
       # Download Linux artifacts
-      - name: Download 32 bit Linux
-        uses: dawidd6/action-download-artifact@v3
-        with:
-          workflow: build_linux.yml
-          name: ClassiCube-Linux32-OpenGL
-      - name: Download 64 bit Linux
-        uses: dawidd6/action-download-artifact@v3
-        with:
-          workflow: build_linux.yml
-          name: ClassiCube-Linux64-OpenGL
+      - name: Retrieve Linux binaries
+        run: |
+          wget https://cdn.classicube.net/client/latest/ClassiCube -O cc-nix64
+          wget https://cdn.classicube.net/client/latest/ClassiCube.32 -O cc-nix32
           
       # Download macOS artifacts
       - name: Retrieve macOS binaries
@@ -75,16 +63,16 @@ jobs:
           }
           
           # Generate Linux builds
-          make_unix_tar cc-linux32.tar.gz cc-nix32-gl1
-          make_unix_tar cc-linux64.tar.gz cc-nix64-gl1
+          make_unix_tar cc-linux32.tar.gz cc-nix32
+          make_unix_tar cc-linux64.tar.gz cc-nix64
           
           # Generate macOS builds
           make_unix_tar cc-mac32.tar.gz cc-mac32
           make_unix_tar cc-mac64.tar.gz cc-mac64
           
           # Generate Windows builds
-          make_windows_zip cc-win32.zip cc-w32-d3d9.exe
-          make_windows_zip cc-win64.zip cc-w64-d3d9.exe
+          make_windows_zip cc-win32.zip cc-w32.exe
+          make_windows_zip cc-win64.zip cc-w64.exe
 
 
       - uses: ./.github/actions/notify_failure
