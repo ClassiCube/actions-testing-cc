@@ -1,8 +1,8 @@
-name: Build latest (N64)
+name: Build latest (WiiU)
 on: [push]
 
 concurrency:
-  group: ${{ github.ref }}-n64
+  group: ${{ github.ref }}-wiiu
   cancel-in-progress: true
 
 jobs:
@@ -10,46 +10,43 @@ jobs:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/dragonminded/libdragon:latest
+      image: devkitpro/devkitppc:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile N64 build
+      - name: Compile Wii U build
         id: compile
         run: |
-          apt-get update
-          apt-get -y install curl
-          REAL_DIR=`pwd`
-          cd /tmp
-          git clone -b opengl https://github.com/DragonMinded/libdragon.git --depth=1
-          cd libdragon
-          make install
-          make tools-install
-          cd $REAL_DIR
-          make n64
+          make wiiu
 
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
-          NOTIFY_MESSAGE: 'Failed to compile N64 build'
+          NOTIFY_MESSAGE: 'Failed to compile WiiU build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'build-n64/ClassiCube-n64.elf'
-          DEST_NAME: 'ClassiCube-n64.elf'
+          SOURCE_FILE: 'ClassiCube-wiiu.wuhb'
+          DEST_NAME: 'ClassiCube-wiiu.wuhb'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube-n64.z64'
-          DEST_NAME: 'ClassiCube-n64.z64'
+          SOURCE_FILE: 'ClassiCube-wiiu.rpx'
+          DEST_NAME: 'ClassiCube-wiiu.rpx'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-wiiu.elf'
+          DEST_NAME: 'ClassiCube-wiiu.elf'
           
           
       - uses: ./.github/actions/notify_success
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           DESTINATION_URL: '${{ secrets.NOTIFY_URL }}'
-          WORKFLOW_NAME: 'n64'
+          WORKFLOW_NAME: 'wiiu'

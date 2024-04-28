@@ -12,11 +12,12 @@ jobs:
     container:
       image: devkitpro/devkitarm:latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Compile 3DS build
         id: compile
         run: |
           make 3ds
+          
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
@@ -24,8 +25,28 @@ jobs:
           NOTIFY_MESSAGE: 'Failed to compile 3DS build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
           
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-3ds.cia'
+          DEST_NAME: 'ClassiCube-3ds.cia'
+                    
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'ClassiCube-3ds.3dsx'
           DEST_NAME: 'ClassiCube-3ds.3dsx'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-3ds.elf'
+          DEST_NAME: 'ClassiCube-3ds.elf'
+          
+          
+      - uses: ./.github/actions/notify_success
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          DESTINATION_URL: '${{ secrets.NOTIFY_URL }}'
+          WORKFLOW_NAME: '3ds'

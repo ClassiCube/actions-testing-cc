@@ -12,10 +12,12 @@ jobs:
     container:
       image: ghcr.io/classicube/minimal-psl1ght:latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Compile PS3 build
         id: compile
         run: |
+          apt-get update
+          apt-get install -y curl
           export PS3DEV=/usr/local/ps3dev
           export PSL1GHT=/usr/local/ps3dev
           export PATH=$PATH:$PS3DEV/bin
@@ -23,16 +25,18 @@ jobs:
           make ps3
 
 
-      # otherwise notify_failure doesn't work
-      - name: Install curl when necessary
-        if: ${{ always() && steps.compile.outcome == 'failure' }}
-        run: apt-get install -y curl
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
         with:
           NOTIFY_MESSAGE: 'Failed to compile PS3 build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
 
+
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-PS3.elf'
+          DEST_NAME: 'ClassiCube-PS3.elf'
 
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
@@ -45,3 +49,10 @@ jobs:
         with:
           SOURCE_FILE: 'ClassiCube-PS3.pkg'
           DEST_NAME: 'ClassiCube-PS3.pkg'
+          
+          
+      - uses: ./.github/actions/notify_success
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          DESTINATION_URL: '${{ secrets.NOTIFY_URL }}'
+          WORKFLOW_NAME: 'ps3'

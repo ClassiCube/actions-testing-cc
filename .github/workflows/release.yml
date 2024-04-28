@@ -11,27 +11,52 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Download resources
       - name: Retrieve classicube texture pack
         run: |
           wget https://www.classicube.net/static/default.zip
-      - name: Retrieve Windows binaries
+      - name: Retrieve classicube audio pack
         run: |
-          wget https://cdn.classicube.net/client/latest/ClassiCube.exe -O cc-win32.exe
-          wget https://cdn.classicube.net/client/latest/ClassiCube.64.exe -O cc-win64.exe
+          wget https://www.classicube.net/static/audio.zip
+          
+      # Download windows artifacts
+      - name: Download 32 bit windows
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: build_windows.yml
+          name: ClassiCube-Win32-Direct3D9.exe
+      - name: Download 64 bit windows
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: build_windows.yml
+          name: ClassiCube-Win64-Direct3D9.exe
+          
+      # Download Linux artifacts
+      - name: Download 32 bit Linux
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: build_linux.yml
+          name: ClassiCube-Linux32-OpenGL
+      - name: Download 64 bit Linux
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: build_linux.yml
+          name: ClassiCube-Linux64-OpenGL
+          
+      # Download macOS artifacts
       - name: Retrieve macOS binaries
         run: |
           wget https://cdn.classicube.net/client/latest/ClassiCube.64.osx -O cc-mac64
           wget https://cdn.classicube.net/client/latest/ClassiCube.osx -O cc-mac32
-      - name: Retrieve Linux binaries
-        run: |
-          wget https://cdn.classicube.net/client/latest/ClassiCube -O cc-linux64
-          wget https://cdn.classicube.net/client/latest/ClassiCube.32 -O cc-linux32
+          
       - name: Generate builds
         id: compile
         shell: bash
         run: |
           mkdir ClassiCube
+          mkdir ClassiCube/audio
           mkdir ClassiCube/texpacks
+          cp audio.zip ClassiCube/audio/classicube.zip
           cp default.zip ClassiCube/texpacks/classicube.zip
           
           # ./ClassiCube
@@ -50,16 +75,16 @@ jobs:
           }
           
           # Generate Linux builds
-          make_unix_tar cc-linux32.tar.gz cc-linux32
-          make_unix_tar cc-linux64.tar.gz cc-linux64
+          make_unix_tar cc-linux32.tar.gz cc-nix32-gl1
+          make_unix_tar cc-linux64.tar.gz cc-nix64-gl1
           
           # Generate macOS builds
           make_unix_tar cc-mac32.tar.gz cc-mac32
           make_unix_tar cc-mac64.tar.gz cc-mac64
           
           # Generate Windows builds
-          make_windows_zip cc-win32.zip cc-win32.exe
-          make_windows_zip cc-win64.zip cc-win64.exe
+          make_windows_zip cc-win32.zip cc-w32-d3d9.exe
+          make_windows_zip cc-win64.zip cc-w64-d3d9.exe
 
 
       - uses: ./.github/actions/notify_failure
