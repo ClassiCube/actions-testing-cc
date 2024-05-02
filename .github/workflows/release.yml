@@ -70,7 +70,7 @@ jobs:
           # ./ClassiCube
           make_windows_zip() {
             cp $2 ClassiCube/ClassiCube.exe
-            zip $1 ClassiCube
+            zip -r $1 ClassiCube
             rm ClassiCube/ClassiCube.exe
           }
           
@@ -170,3 +170,10 @@ jobs:
         with:
           SOURCE_FILE: 'cc-freebsd64.tar.gz'
           DEST_NAME: 'cc-freebsd64.tar.gz'
+          
+          
+      - uses: ./.github/actions/notify_success
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          DESTINATION_URL: '${{ secrets.NOTIFY_URL }}'
+          WORKFLOW_NAME: 'release'
