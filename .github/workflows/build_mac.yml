@@ -22,7 +22,7 @@ jobs:
           MAC64_FLAGS:  "-fvisibility=hidden -rdynamic -DCC_BUILD_ICON"
         run: |
           LATEST_FLAG=-DCC_COMMIT_SHA=\"${GITHUB_SHA::9}\"
-          echo $PATH
+          find /opt/osxcross/target/bin
           
           cd src
           MACOSX_DEPLOYMENT_TARGET=10.5 x86_64-apple-darwin9-cc *.c interop_cocoa.m ${{ env.COMMON_FLAGS }} ${{ env.MAC64_FLAGS }} $LATEST_FLAG -o cc-mac64-gl1 -framework Cocoa -framework OpenGL -framework IOKit -lobjc
