@@ -12,7 +12,7 @@ jobs:
     container:
       image: fzwoch/osxcross
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
       - name: Compile 64 bit macOS builds
         shell: bash
         id: compile
