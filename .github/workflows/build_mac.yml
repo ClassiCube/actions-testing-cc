@@ -1,8 +1,8 @@
-name: Build latest (macOS 64 bit)
+name: Build latest (macOS)
 on: [push]
 
 concurrency:
-  group: ${{ github.ref }}-mac64
+  group: ${{ github.ref }}-mac
   cancel-in-progress: true
 
 jobs:
