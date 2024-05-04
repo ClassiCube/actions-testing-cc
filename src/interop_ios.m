@@ -44,6 +44,7 @@
 static CCViewController* cc_controller;
 static UIWindow* win_handle;
 static UIView* view_handle;
+static cc_bool launcherMode;
 
 static void AddTouch(UITouch* t) {
     CGPoint loc = [t locationInView:view_handle];
@@ -75,7 +76,7 @@ static UIInterfaceOrientationMask SupportedOrientations(void) {
 
 static cc_bool fullscreen = true;
 static void UpdateStatusBar(void) {
-    if ([cc_controller respondsToSelector:@selector(setNeedsStatusBarAppearanceUpdate)]) {
+    if (@available(iOS 10.7, *)) {
         // setNeedsStatusBarAppearanceUpdate - iOS 7.0
         [cc_controller setNeedsStatusBarAppearanceUpdate];
     } else {
@@ -93,6 +94,9 @@ static CGRect GetViewFrame(void) {
 - (void)touchesBegan:(NSSet*)touches withEvent:(UIEvent *)event {
     // touchesBegan:withEvent - iOS 2.0
     for (UITouch* t in touches) AddTouch(t);
+    
+    // clicking on the background should dismiss onscren keyboard
+    if (launcherMode) { [view_handle endEditing:NO]; }
 }
 
 - (void)touchesMoved:(NSSet*)touches withEvent:(UIEvent *)event {
@@ -485,13 +489,15 @@ void Window_RequestClose(void) {
     Event_RaiseVoid(&WindowEvents.Closing);
 }
 
-void Window_ProcessEvents(double delta) {
+void Window_ProcessEvents(float delta) {
     SInt32 res;
     // manually tick event queue
     do {
         res = CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, TRUE);
     } while (res == kCFRunLoopRunHandledSource);
 }
+
+void Window_ProcessGamepads(float delta) { }
 
 void ShowDialogCore(const char* title, const char* msg) {
     // UIAlertController - iOS 8.0
@@ -503,16 +509,16 @@ void ShowDialogCore(const char* title, const char* msg) {
     NSString* _msg   = [NSString stringWithCString:msg encoding:NSASCIIStringEncoding];
     alert_completed  = false;
     
-#ifdef TARGET_OS_TV
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:_title message:_msg preferredStyle:UIAlertControllerStyleAlert];
-    UIAlertAction* okBtn     = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction* act) { alert_completed = true; }];
-    [alert addAction:okBtn];
-    [cc_controller presentViewController:alert animated:YES completion: Nil];
-#else
-    UIAlertView* alert = [UIAlertView alloc];
-    alert = [alert initWithTitle:_title message:_msg delegate:cc_controller cancelButtonTitle:@"OK" otherButtonTitles:nil];
-    [alert show];
-#endif
+    if (@available(iOS 10.8, *)) {
+        UIAlertController* alert = [UIAlertController alertControllerWithTitle:_title message:_msg preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertAction* okBtn     = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction* act) { alert_completed = true; }];
+        [alert addAction:okBtn];
+        [cc_controller presentViewController:alert animated:YES completion: Nil];
+    } else {
+        UIAlertView* alert = [UIAlertView alloc];
+        alert = [alert initWithTitle:_title message:_msg delegate:cc_controller cancelButtonTitle:@"OK" otherButtonTitles:nil];
+        [alert show];
+    }
     
     // TODO clicking outside message box crashes launcher
     // loop until alert is closed TODO avoid sleeping
@@ -645,15 +651,18 @@ cc_result Window_OpenFileDialog(const struct OpenFileDialogArgs* args) {
         if (utType) [types addObject:utType];
     }
     
-    UIDocumentPickerViewController* dlg;
-    dlg = [UIDocumentPickerViewController alloc];
-    dlg = [dlg initWithDocumentTypes:types inMode:UIDocumentPickerModeOpen];
-    //dlg = [dlg initWithDocumentTypes:types inMode:UIDocumentPickerModeImport];
-    
-    open_dlg_callback = args->Callback;
-    dlg.delegate = cc_controller;
-    [cc_controller presentViewController:dlg animated:YES completion: Nil];
-    return 0; // TODO still unfinished
+    if (@available(iOS 10.8, *)) {
+        UIDocumentPickerViewController* dlg;
+        dlg = [UIDocumentPickerViewController alloc];
+        dlg = [dlg initWithDocumentTypes:types inMode:UIDocumentPickerModeOpen];
+        //dlg = [dlg initWithDocumentTypes:types inMode:UIDocumentPickerModeImport];
+        
+        open_dlg_callback = args->Callback;
+        dlg.delegate = cc_controller;
+        [cc_controller presentViewController:dlg animated:YES completion: Nil];
+        return 0; // TODO still unfinished
+    }
+    return ERR_NOT_SUPPORTED;
 }
 
 cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
@@ -671,13 +680,16 @@ cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
     NSString* str = ToNSString(&save_path);
     NSURL* url    = [NSURL fileURLWithPath:str isDirectory:NO];
     
-    UIDocumentPickerViewController* dlg;
-    dlg = [UIDocumentPickerViewController alloc];
-    dlg = [dlg initWithURL:url inMode:UIDocumentPickerModeExportToService];
-    
-    dlg.delegate = cc_controller;
-    [cc_controller presentViewController:dlg animated:YES completion: Nil];
-    return 0;
+    if (@available(iOS 10.8, *)) {
+        UIDocumentPickerViewController* dlg;
+        dlg = [UIDocumentPickerViewController alloc];
+        dlg = [dlg initWithURL:url inMode:UIDocumentPickerModeExportToService];
+        
+        dlg.delegate = cc_controller;
+        [cc_controller presentViewController:dlg animated:YES completion: Nil];
+        return 0; // TODO still unfinished
+    }
+    return ERR_NOT_SUPPORTED;
 }
 
 
@@ -685,6 +697,7 @@ cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
  *--------------------------------------------------------2D window--------------------------------------------------------*
  *#########################################################################################################################*/
 void Window_Create2D(int width, int height) {
+    launcherMode  = true;
     CGRect bounds = DoCreateWindow();
     
     view_handle = [[UIView alloc] initWithFrame:bounds];
@@ -714,8 +727,10 @@ static void GLContext_OnLayout(void);
 @end
 
 void Window_Create3D(int width, int height) {
-    // CAEAGLLayer - iOS 2.0
+    launcherMode  = false;
     CGRect bounds = DoCreateWindow();
+    
+    // CAEAGLLayer - iOS 2.0
     view_handle   = [[CCGLView alloc] initWithFrame:bounds];
     view_handle.multipleTouchEnabled = true;
     cc_controller.view = view_handle;
@@ -1676,17 +1691,6 @@ void LBackend_TableUpdate(struct LTable* w) {
     [tbl reloadData];
 }
 
-// TODO only redraw flags
-void LBackend_TableFlagAdded(struct LTable* w) {
-    UITableView* tbl = (__bridge UITableView*)w->meta;
-    
-    // trying to update cell.imageView.image doesn't seem to work,
-    // so pointlessly reload entire table data instead
-    NSIndexPath* selected = [tbl indexPathForSelectedRow];
-    [tbl reloadData];
-    [tbl selectRowAtIndexPath:selected animated:NO scrollPosition:UITableViewScrollPositionNone];
-}
-
 void LBackend_TableDraw(struct LTable* w) { }
 void LBackend_TableReposition(struct LTable* w) { }
 void LBackend_TableMouseDown(struct LTable* w, int idx) { }
@@ -1694,7 +1698,7 @@ void LBackend_TableMouseUp(struct   LTable* w, int idx) { }
 void LBackend_TableMouseMove(struct LTable* w, int idx) { }
 
 static void LTable_UpdateCellColor(UIView* view, struct ServerInfo* server, int row, cc_bool selected) {
-    BitmapCol color = LTable_RowColor(server, row, selected);
+    BitmapCol color = LTable_RowColor(row, selected, server && server->featured);
     if (color) {
         view.backgroundColor = ToUIColor(color, 1.0f);
         view.opaque          = YES;
@@ -1714,10 +1718,6 @@ static void LTable_UpdateCell(UITableView* table, UITableViewCell* cell, int row
     LTable_FormatUptime(&desc, server->uptime);
     if (server->software.length) String_Format1(&desc, " | %s", &server->software);
     
-    if (flag && !flag->meta && flag->bmp.scan0) {
-        UIImage* img = ToUIImage(&flag->bmp);
-        flag->meta   = CFBridgingRetain(img);
-    }
     if (flag && flag->meta)
         cell.imageView.image = (__bridge UIImage*)flag->meta;
         
@@ -1732,9 +1732,33 @@ static void LTable_UpdateCell(UITableView* table, UITableViewCell* cell, int row
     LTable_UpdateCellColor(cell, server, row, selected);
 }
 
+// TODO only redraw flags
+static void OnFlagsChanged(void) {
+	struct LScreen* s = Launcher_Active;
+    for (int i = 0; i < s->numWidgets; i++)
+    {
+		if (s->widgets[i]->type != LWIDGET_TABLE) continue;
+        UITableView* tbl = (__bridge UITableView*)s->widgets[i]->meta;
+    
+		// trying to update cell.imageView.image doesn't seem to work,
+		// so pointlessly reload entire table data instead
+		NSIndexPath* selected = [tbl indexPathForSelectedRow];
+		[tbl reloadData];
+		[tbl selectRowAtIndexPath:selected animated:NO scrollPosition:UITableViewScrollPositionNone];
+    }
+}
+
 /*########################################################################################################################*
  *------------------------------------------------------UI Backend--------------------------------------------------------*
  *#########################################################################################################################*/
+void LBackend_DecodeFlag(struct Flag* flag, cc_uint8* data, cc_uint32 len) {
+	NSData* ns_data = [NSData dataWithBytes:data length:len];
+	UIImage* img = [UIImage imageWithData:ns_data];
+	if (!img) return;
+	
+    flag->meta = CFBridgingRetain(img);  
+	OnFlagsChanged();
+}
 
 static void LBackend_LayoutDimensions(struct LWidget* w, CGRect* r) {
     const struct LLayout* l = w->layouts + 2;

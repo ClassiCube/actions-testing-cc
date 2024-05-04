@@ -496,13 +496,15 @@ static cc_result HttpConnection_Open(struct HttpConnection* conn, const struct H
 static cc_result HttpConnection_Read(struct HttpConnection* conn, cc_uint8* data, cc_uint32 count, cc_uint32* read) {
 	if (conn->sslCtx)
 		return SSL_Read(conn->sslCtx, data, count, read);
+
 	return Socket_Read(conn->socket,  data, count, read);
 }
 
-static cc_result HttpConnection_Write(struct HttpConnection* conn, const cc_uint8* data, cc_uint32 count, cc_uint32* wrote) {
+static cc_result HttpConnection_Write(struct HttpConnection* conn, const cc_uint8* data, cc_uint32 count) {
 	if (conn->sslCtx) 
-		return SSL_Write(conn->sslCtx, data, count, wrote);
-	return Socket_Write(conn->socket,  data, count, wrote);
+		return SSL_WriteAll(conn->sslCtx, data, count);
+
+	return Socket_WriteAll(conn->socket,  data, count);
 }
 
 
@@ -621,15 +623,13 @@ static void HttpClient_Serialise(struct HttpClientState* state) {
 static cc_result HttpClient_SendRequest(struct HttpClientState* state) {
 	char inputBuffer[16384];
 	cc_string inputMsg;
-	cc_uint32 wrote;
 
 	String_InitArray(inputMsg, inputBuffer);
 	state->req->meta     = &inputMsg;
 	state->req->progress = HTTP_PROGRESS_FETCHING_DATA;
 	HttpClient_Serialise(state);
 
-	/* TODO check that wrote is >= inputMsg.length */
-	return HttpConnection_Write(state->conn, (cc_uint8*)inputBuffer, inputMsg.length, &wrote);
+	return HttpConnection_Write(state->conn, (cc_uint8*)inputBuffer, inputMsg.length);
 }
 
 
@@ -833,9 +833,12 @@ static cc_result HttpClient_ParseResponse(struct HttpClientState* state) {
 	{
 		dst = state->dataLeft > INPUT_BUFFER_LEN ? (req->data + req->size) : buffer;
 		res = HttpConnection_Read(state->conn, dst, INPUT_BUFFER_LEN, &total);
+		if (res) return res;
 
-		if (res)        return res;
-		if (total == 0) return ERR_END_OF_STREAM;
+		if (total == 0) {
+			Platform_LogConst("Http read unexpectedly returned 0");
+			return ERR_END_OF_STREAM;
+		}
 
 		if (dst != buffer) {
 			/* When there is more than INPUT_BUFFER_LEN bytes of unread data/content, */
@@ -1278,7 +1281,7 @@ static void PerformRequest(struct HttpRequest* req, cc_string* url) {
 	end = Stopwatch_Measure();
 
 	elapsed = Stopwatch_ElapsedMS(beg, end);
-	Platform_Log4("HTTP: result %i (http %i) in %i ms (%i bytes)",
+	Platform_Log4("HTTP: result %e (http %i) in %i ms (%i bytes)",
 		&req->result, &req->statusCode, &elapsed, &req->size);
 
 	Http_FinishRequest(req);

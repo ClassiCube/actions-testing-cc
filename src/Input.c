@@ -291,6 +291,15 @@ void Input_Clear(void) {
 	ClearTouches();
 }
 
+int Input_CalcDelta(int key, int horDelta, int verDelta) {
+	if (Input_IsLeftButton(key)  || key == CCKEY_KP4) return -horDelta;
+	if (Input_IsRightButton(key) || key == CCKEY_KP6) return +horDelta;
+	if (Input_IsUpButton(key)    || key == CCKEY_KP8) return -verDelta;
+	if (Input_IsDownButton(key)  || key == CCKEY_KP2) return +verDelta;
+	
+	return 0;
+}
+
 
 /*########################################################################################################################*
 *----------------------------------------------------------Mouse----------------------------------------------------------*
@@ -418,48 +427,97 @@ static void KeyBind_Init(void) {
 *---------------------------------------------------------Gamepad---------------------------------------------------------*
 *#########################################################################################################################*/
 #define GAMEPAD_BEG_BTN CCPAD_A
-static float pad_holdtime[INPUT_COUNT - GAMEPAD_BEG_BTN];
+#define GAMEPAD_BTN_COUNT (INPUT_COUNT - GAMEPAD_BEG_BTN)
 
 int Gamepad_AxisBehaviour[2]   = { AXIS_BEHAVIOUR_MOVEMENT, AXIS_BEHAVIOUR_CAMERA };
 int Gamepad_AxisSensitivity[2] = { AXIS_SENSI_NORMAL, AXIS_SENSI_NORMAL };
 static const float axis_sensiFactor[] = { 0.25f, 0.5f, 1.0f, 2.0f, 4.0f };
 
-void Gamepad_SetButton(int btn, int pressed) {
-	/* Reset hold tracking time */
-	if (pressed && !Input.Pressed[btn]) pad_holdtime[btn - GAMEPAD_BEG_BTN] = 0;
+struct GamepadState {
+	float axisX[2], axisY[2];
+	cc_bool pressed[GAMEPAD_BTN_COUNT];
+	float holdtime[GAMEPAD_BTN_COUNT];
+};
+static struct GamepadState gamepads[INPUT_MAX_GAMEPADS];
 
-	Input_SetNonRepeatable(btn, pressed);
+static void Gamepad_Update(struct GamepadState* pad, float delta) {
+	int btn;
+	for (btn = 0; btn < GAMEPAD_BTN_COUNT; btn++)
+	{
+		if (!pad->pressed[btn]) continue;
+		pad->holdtime[btn] += delta;
+		if (pad->holdtime[btn] < 1.0f) continue;
+
+		/* Held for over a second, trigger a fake press */
+		pad->holdtime[btn] = 0;
+		Input_SetPressed(btn + GAMEPAD_BEG_BTN);
+	}
 }
 
-void Gamepad_SetAxis(int axis, float x, float y, double delta) {
+
+void Gamepad_SetButton(int port, int btn, int pressed) {
+	struct GamepadState* pad = &gamepads[port];
+	int i;
+	btn -= GAMEPAD_BEG_BTN;
+
+	/* Reset hold tracking time */
+	if (pressed && !pad->pressed[btn]) pad->holdtime[btn] = 0;
+	pad->pressed[btn] = pressed != 0;;
+
+	/* Set pressed if button pressed on any gamepad, to avoid constant flip flopping */
+	/*  between pressed and non-pressed when multiple controllers are plugged in */
+	for (i = 0; i < INPUT_MAX_GAMEPADS; i++) 
+		pressed |= gamepads[i].pressed[btn];
+
+	Input_SetNonRepeatable(btn + GAMEPAD_BEG_BTN, pressed);
+}
+
+void Gamepad_SetAxis(int port, int axis, float x, float y, float delta) {
+	gamepads[port].axisX[axis] = x;
+	gamepads[port].axisY[axis] = y;
 	if (x == 0 && y == 0) return;
 
 	int sensi   = Gamepad_AxisSensitivity[axis];
-	float scale = delta * 60.0 * axis_sensiFactor[sensi];
-	Event_RaisePadAxis(&ControllerEvents.AxisUpdate, axis, x * scale, y * scale);
-
-	if (Gamepad_AxisBehaviour[axis] == AXIS_BEHAVIOUR_MOVEMENT) {
-		if (!Input.RawMode) return;
-
-		Input.JoystickMovement = true;
-		Input.JoystickAngle    = Math_Atan2(x, y);
-	}
+	float scale = delta * 60.0f * axis_sensiFactor[sensi];
+	Event_RaisePadAxis(&ControllerEvents.AxisUpdate, port, axis, x * scale, y * scale);
 }
 
-void Gamepad_Tick(double delta) {
-	int btn;
-
-	for (btn = GAMEPAD_BEG_BTN; btn < INPUT_COUNT; btn++)
+void Gamepad_Tick(float delta) {
+	int port;
+	Window_ProcessGamepads(delta);
+	
+	for (port = 0; port < INPUT_MAX_GAMEPADS; port++)
 	{
-		if (!Input.Pressed[btn]) continue;
-		pad_holdtime[btn - GAMEPAD_BEG_BTN] += delta;
-		if (pad_holdtime[btn - GAMEPAD_BEG_BTN] < 1.0) continue;
-
-		/* Held for over a second, trigger a fake press */
-		pad_holdtime[btn - GAMEPAD_BEG_BTN] = 0;
-		Input_SetPressed(btn);
+		Gamepad_Update(&gamepads[port], delta);
 	}
 }
+
+static void PlayerInputPad(int port, int axis, struct LocalPlayer* p, float* xMoving, float* zMoving) {
+	float x, y, angle;
+	if (Gamepad_AxisBehaviour[axis] != AXIS_BEHAVIOUR_MOVEMENT) return;
+	
+	x = gamepads[port].axisX[axis];
+	y = gamepads[port].axisY[axis];
+	
+	if (x != 0 || y != 0) {
+		angle    = Math_Atan2f(x, y);
+		*xMoving = Math_CosF(angle);
+		*zMoving = Math_SinF(angle);
+	}
+}
+
+static void PlayerInputGamepad(struct LocalPlayer* p, float* xMoving, float* zMoving) {
+	int port;
+	for (port = 0; port < INPUT_MAX_GAMEPADS; port++)
+	{
+		/* In splitscreen mode, tie a controller to a specific player*/
+		if (Game_NumLocalPlayers > 1 && p->index != port) continue;
+		
+		PlayerInputPad(port, PAD_AXIS_LEFT,  p, xMoving, zMoving);
+		PlayerInputPad(port, PAD_AXIS_RIGHT, p, xMoving, zMoving);
+	}
+}
+static struct LocalPlayerInput gamepadInput = { PlayerInputGamepad };
 
 
 /*########################################################################################################################*
@@ -653,8 +711,11 @@ static void MouseStateUpdate(int button, cc_bool pressed) {
 	struct Entity* p;
 	/* defer getting the targeted entity, as it's a costly operation */
 	if (input_pickingId == -1) {
-		p = &LocalPlayer_Instance.Base;
+		p = &Entities.CurPlayer->Base;
 		input_pickingId = Entities_GetClosest(p);
+		
+		if (input_pickingId == -1) 
+			input_pickingId = ENTITIES_SELF_ID;
 	}
 
 	input_buttonsDown[button] = pressed;
@@ -698,8 +759,8 @@ void InputHandler_OnScreensChanged(void) {
 
 static cc_bool TouchesSolid(BlockID b) { return Blocks.Collide[b] == COLLIDE_SOLID; }
 static cc_bool PushbackPlace(struct AABB* blockBB) {
-	struct Entity* p        = &LocalPlayer_Instance.Base;
-	struct HacksComp* hacks = &LocalPlayer_Instance.Hacks;
+	struct Entity* p        = &Entities.CurPlayer->Base;
+	struct HacksComp* hacks = &Entities.CurPlayer->Hacks;
 	Face closestFace;
 	cc_bool insideMap;
 
@@ -750,9 +811,10 @@ static cc_bool IntersectsOthers(Vec3 pos, BlockID block) {
 	Vec3_Add(&blockBB.Min, &pos, &Blocks.MinBB[block]);
 	Vec3_Add(&blockBB.Max, &pos, &Blocks.MaxBB[block]);
 	
-	for (id = 0; id < ENTITIES_SELF_ID; id++) {
+	for (id = 0; id < ENTITIES_MAX_COUNT; id++)	
+	{
 		e = Entities.List[id];
-		if (!e) continue;
+		if (!e || e == &Entities.CurPlayer->Base) continue;
 
 		Entity_GetBounds(e, &entityBB);
 		entityBB.Min.y += 1.0f / 32.0f; /* when player is exactly standing on top of ground */
@@ -762,8 +824,8 @@ static cc_bool IntersectsOthers(Vec3 pos, BlockID block) {
 }
 
 static cc_bool CheckIsFree(BlockID block) {
-	struct Entity* p        = &LocalPlayer_Instance.Base;
-	struct HacksComp* hacks = &LocalPlayer_Instance.Hacks;
+	struct Entity* p        = &Entities.CurPlayer->Base;
+	struct HacksComp* hacks = &Entities.CurPlayer->Hacks;
 
 	Vec3 pos, nextPos;
 	struct AABB blockBB, playerBB;
@@ -775,7 +837,7 @@ static cc_bool CheckIsFree(BlockID block) {
 	IVec3_ToVec3(&pos, &Game_SelectedPos.translatedPos);
 	if (IntersectsOthers(pos, block)) return false;
 	
-	nextPos = LocalPlayer_Instance.Base.next.pos;
+	nextPos = p->next.pos;
 	Vec3_Add(&blockBB.Min, &pos, &Blocks.MinBB[block]);
 	Vec3_Add(&blockBB.Max, &pos, &Blocks.MaxBB[block]);
 
@@ -919,7 +981,7 @@ static void InputHandler_Toggle(int key, cc_bool* target, const char* enableMsg,
 }
 
 cc_bool InputHandler_SetFOV(int fov) {
-	struct HacksComp* h = &LocalPlayer_Instance.Hacks;
+	struct HacksComp* h = &Entities.CurPlayer->Hacks;
 	if (!h->Enabled || !h->CanUseThirdPerson) return false;
 
 	Camera.ZoomFov = fov;
@@ -935,7 +997,7 @@ cc_bool Input_HandleMouseWheel(float delta) {
 	if (!hotbar && Camera.Active->Zoom(delta))   return true;
 	if (!KeyBind_IsPressed(KEYBIND_ZOOM_SCROLL)) return false;
 
-	h = &LocalPlayer_Instance.Hacks;
+	h = &Entities.CurPlayer->Hacks;
 	if (!h->Enabled || !h->CanUseThirdPerson) return false;
 
 	if (input_fovIndex == -1.0f) input_fovIndex = (float)Camera.ZoomFov;
@@ -946,7 +1008,7 @@ cc_bool Input_HandleMouseWheel(float delta) {
 }
 
 static void InputHandler_CheckZoomFov(void* obj) {
-	struct HacksComp* h = &LocalPlayer_Instance.Hacks;
+	struct HacksComp* h = &Entities.CurPlayer->Hacks;
 	if (!h->Enabled || !h->CanUseThirdPerson) Camera_SetFov(Camera.DefaultFov);
 }
 
@@ -1038,16 +1100,18 @@ static void HandleHotkeyDown(int key) {
 }
 
 static cc_bool HandleLocalPlayerKey(int key) {
+	struct LocalPlayer* p = Entities.CurPlayer;
+	
 	if (KeyBind_Claims(KEYBIND_RESPAWN, key)) {
-		return LocalPlayer_HandleRespawn();
+		return LocalPlayer_HandleRespawn(p);
 	} else if (KeyBind_Claims(KEYBIND_SET_SPAWN, key)) {
-		return LocalPlayer_HandleSetSpawn();
+		return LocalPlayer_HandleSetSpawn(p);
 	} else if (KeyBind_Claims(KEYBIND_FLY, key)) {
-		return LocalPlayer_HandleFly();
+		return LocalPlayer_HandleFly(p);
 	} else if (KeyBind_Claims(KEYBIND_NOCLIP, key)) {
-		return LocalPlayer_HandleNoclip();
+		return LocalPlayer_HandleNoclip(p);
 	} else if (KeyBind_Claims(KEYBIND_JUMP, key)) {
-		return LocalPlayer_HandleJump();
+		return LocalPlayer_HandleJump(p);
 	}
 	return false;
 }
@@ -1177,7 +1241,19 @@ static void OnInputUp(void* obj, int key) {
 }
 
 static void OnFocusChanged(void* obj) { if (!Window_Main.Focused) Input_Clear(); }
+
+static void PlayerInputNormal(struct LocalPlayer* p, float* xMoving, float* zMoving) {
+	if (KeyBind_IsPressed(KEYBIND_FORWARD)) *zMoving -= 1;
+	if (KeyBind_IsPressed(KEYBIND_BACK))    *zMoving += 1;
+	if (KeyBind_IsPressed(KEYBIND_LEFT))    *xMoving -= 1;
+	if (KeyBind_IsPressed(KEYBIND_RIGHT))   *xMoving += 1;
+}
+static struct LocalPlayerInput normalInput = { PlayerInputNormal };
+
 static void OnInit(void) {
+	LocalPlayerInput_Add(&normalInput);
+	LocalPlayerInput_Add(&gamepadInput);
+	
 	Event_Register_(&PointerEvents.Down,  NULL, OnPointerDown);
 	Event_Register_(&PointerEvents.Up,    NULL, OnPointerUp);
 	Event_Register_(&InputEvents.Down,    NULL, OnInputDown);

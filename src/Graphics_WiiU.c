@@ -31,7 +31,6 @@ static GfxResourceID white_square;
 static WHBGfxShaderGroup* group;
 
 static void InitGfx(void) {
-	WHBGfxInit();
    	GX2InitSampler(&sampler, GX2_TEX_CLAMP_MODE_WRAP, GX2_TEX_XY_FILTER_MODE_POINT);
 	
 	WHBGfxLoadGFDShaderGroup(&colorShader, 0, coloured_gsh);
@@ -86,7 +85,9 @@ static void Gfx_RestoreState(void) {
 static GX2Texture* pendingTex;
 
 static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
-	GX2Texture* tex = Mem_AllocCleared(1, sizeof(GX2Texture), "GX2 texture");
+	GX2Texture* tex = Mem_TryAllocCleared(1, sizeof(GX2Texture));
+	if (!tex) return NULL;
+
 	// TODO handle out of memory better
 	int width = bmp->width, height = bmp->height;
 	tex->surface.width    = width;
@@ -99,8 +100,9 @@ static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8
 	tex->compMap          = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A);
 	GX2CalcSurfaceSizeAndAlignment(&tex->surface);
 	GX2InitTextureRegs(tex);
+
 	tex->surface.image = MEMAllocFromDefaultHeapEx(tex->surface.imageSize, tex->surface.alignment);
-	// TODO check result
+	if (!tex->surface.image) { Mem_Free(tex); return NULL; }
   
 	CopyTextureData(tex->surface.image, tex->surface.pitch << 2, bmp, rowWidth << 2);
 	GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex->surface.image, tex->surface.imageSize);
@@ -374,11 +376,11 @@ void Gfx_CalcOrthoMatrix(struct Matrix* matrix, float width, float height, float
 	matrix->row4.z = zNear / (zNear - zFar);
 }
 
-static double Cotangent(double x) { return Math_Cos(x) / Math_Sin(x); }
+static float Cotangent(float x) { return Math_CosF(x) / Math_SinF(x); }
 void Gfx_CalcPerspectiveMatrix(struct Matrix* matrix, float fov, float aspect, float zFar) {
 	// TODO verify this
 	float zNear = 0.1f;
-	float c = (float)Cotangent(0.5f * fov);
+	float c = Cotangent(0.5f * fov);
 	*matrix = Matrix_Identity;
 
 	matrix->row1.x =  c / aspect;
@@ -431,12 +433,18 @@ void Gfx_ClearBuffers(GfxBuffers buffers) {
 	}
 }
 
+static int drc_ticks;
 void Gfx_EndFrame(void) {
 	GX2ColorBuffer* buf;
 	
 	buf = WHBGfxGetTVColourBuffer();
 	GX2CopyColorBufferToScanBuffer(buf, GX2_SCAN_TARGET_TV);	
+
+	GX2ContextState* state = WHBGfxGetDRCContextState();
+	GX2SetContextState(state);
+	drc_ticks = (drc_ticks + 1) % 200;
 	buf = WHBGfxGetDRCColourBuffer();
+	GX2ClearColor(buf, drc_ticks / 200.0f, drc_ticks / 200.0f, drc_ticks / 200.0f, 1.0f);
 	GX2CopyColorBufferToScanBuffer(buf, GX2_SCAN_TARGET_DRC);	
 	
 	GX2SwapScanBuffers();
@@ -458,6 +466,12 @@ void Gfx_GetApiInfo(cc_string* info) {
 void Gfx_OnWindowResize(void) {
 
 }
+
+void Gfx_SetViewport(int x, int y, int w, int h) {
+   GX2SetViewport(x, y, w, h, 0.0f, 1.0f);
+   GX2SetScissor( x, y, w, h);
+}
+
 void Gfx_3DS_SetRenderScreen1(enum Screen3DS screen) {
 	GX2ContextState* tv_state  = WHBGfxGetTVContextState();
 	GX2ContextState* drc_state = WHBGfxGetDRCContextState(); // TODO

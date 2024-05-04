@@ -7,11 +7,11 @@
 #include "Bitmap.h"
 #include "Errors.h"
 #include <SDL2/SDL.h>
-static SDL_Window* win_handle;
 
-#ifndef CC_BUILD_OS2
-#error "Some features are missing from the SDL backend. If possible, it is recommended that you use a native windowing backend instead"
-#else
+static SDL_Window* win_handle;
+#warning "Some features are missing from the SDL backend. If possible, it is recommended that you use a native windowing backend instead"
+
+#ifdef CC_BUILD_OS2
 #define INCL_PM
 #include <os2.h>
 // Internal OS/2 driver data
@@ -258,7 +258,7 @@ static void OnWindowEvent(const SDL_Event* e) {
 		}
 }
 
-void Window_ProcessEvents(double delta) {
+void Window_ProcessEvents(float delta) {
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
 		switch (e.type) {
@@ -294,6 +294,8 @@ void Window_ProcessEvents(double delta) {
 		}
 	}
 }
+
+void Window_ProcessGamepads(float delta) { }
 
 static void Cursor_GetRawPos(int* x, int* y) {
 	SDL_GetMouseState(x, y);

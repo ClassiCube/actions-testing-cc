@@ -12,7 +12,9 @@
 void Gfx_Create(void) {
 	Gfx_RestoreState();
 
-    Gfx.MaxTexWidth  = 256;
+	Gfx.MinTexWidth  =   8;
+	Gfx.MinTexHeight =   8;
+	Gfx.MaxTexWidth  = 256;
 	Gfx.MaxTexHeight = 256;
     //Gfx.MaxTexSize   = 256 * 256;
 	Gfx.Created      = true;
@@ -22,7 +24,7 @@ void Gfx_Create(void) {
     glClearPolyID(63);
     glAlphaFunc(7);
 
-    glClearDepth(0x7FFF);
+    glClearDepth(GL_MAX_DEPTH);
     glViewport(0, 0, 255, 191);
     
     vramSetBankA(VRAM_A_TEXTURE);
@@ -65,6 +67,8 @@ void Gfx_SetFpsLimit(cc_bool vsync, float minFrameMs) {
 
 void Gfx_OnWindowResize(void) { 
 }
+
+void Gfx_SetViewport(int x, int y, int w, int h) { }
 
 void Gfx_BeginFrame(void) {
 }
@@ -168,8 +172,18 @@ void Gfx_DisableMipmaps(void) { }
 /*########################################################################################################################*
 *-----------------------------------------------------State management----------------------------------------------------*
 *#########################################################################################################################*/
-void Gfx_SetFaceCulling(cc_bool enabled)   { }
-void Gfx_SetAlphaBlending(cc_bool enabled) { }
+void Gfx_SetFaceCulling(cc_bool enabled) {
+	glPolyFmt(POLY_ALPHA(31) | (enabled ? POLY_CULL_BACK : POLY_CULL_NONE));
+}
+
+void Gfx_SetAlphaBlending(cc_bool enabled) {
+	/*if (enabled) {
+		glEnable(GL_BLEND);
+	} else {
+		glDisable(GL_BLEND);
+	}*/
+}
+
 void Gfx_SetAlphaArgBlend(cc_bool enabled) { }
 
 static void SetColorWrite(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
@@ -206,10 +220,10 @@ void Gfx_CalcOrthoMatrix(struct Matrix* matrix, float width, float height, float
 	matrix->row4.z = -(zFar + zNear) / (zFar - zNear);
 }
 
-static double Cotangent(double x) { return Math_Cos(x) / Math_Sin(x); }
+static float Cotangent(float x) { return Math_CosF(x) / Math_SinF(x); }
 void Gfx_CalcPerspectiveMatrix(struct Matrix* matrix, float fov, float aspect, float zFar) {
 	float zNear = 0.1f;
-	float c = (float)Cotangent(0.5f * fov);
+	float c = Cotangent(0.5f * fov);
 
 	/* Transposed, source https://learn.microsoft.com/en-us/windows/win32/opengl/glfrustum */
 	/* For a FOV based perspective matrix, left/right/top/bottom are calculated as: */
@@ -454,19 +468,28 @@ static void Draw_ColouredTriangles(int verticesCount, int startVertex) {
 
 static void Draw_TexturedTriangles(int verticesCount, int startVertex) {
 	glBegin(GL_QUADS);
-    int width = 0, height = 0;
-    glGetInt(GL_GET_TEXTURE_WIDTH,  &width);  width  = inttof32(width);
-    glGetInt(GL_GET_TEXTURE_HEIGHT, &height); height = inttof32(height);
-    
+	int width = 0, height = 0;
+	glGetInt(GL_GET_TEXTURE_WIDTH,  &width);
+	glGetInt(GL_GET_TEXTURE_HEIGHT, &height);
+
+	// Original code used was
+	//   U = mulf32(v->u, inttof32(width))
+	// which behind the scenes expands to
+	//   W = width << 12
+	//   U = ((int64)v->u * W) >> 12;
+	// and in this case, the bit shifts can be cancelled out
+	//  to avoid calling __aeabi_lmul to perform the 64 bit multiplication
+	// therefore the code can be simplified to
+	//   U = v->u * width
 
 	for (int i = 0; i < verticesCount; i++)
 	{
 		struct DSTexturedVertex* v = (struct DSTexturedVertex*)gfx_vertices + startVertex + i;
 		
-		GFX_COLOR    = v->rgb;
-        glTexCoord2t16(f32tot16(mulf32(v->u, width)), f32tot16(mulf32(v->v, height)));
-		GFX_VERTEX16 = v->xy;
-        GFX_VERTEX16 = v->z;
+		GFX_COLOR     = v->rgb;
+		GFX_TEX_COORD = TEXTURE_PACK(f32tot16(v->u * width), f32tot16(v->v * height));
+		GFX_VERTEX16  = v->xy;
+		GFX_VERTEX16  = v->z;
 	}
 	glEnd();
 }

@@ -119,7 +119,7 @@ typedef cc_uint8  cc_bool;
 
 
 #define CC_BUILD_NETWORKING
-#undef CC_BUILD_FREETYPE
+//#define CC_BUILD_FREETYPE
 #define CC_BUILD_RESOURCES
 #define CC_BUILD_PLUGINS
 #define CC_BUILD_ANIMATIONS
@@ -136,6 +136,7 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_NOSOUNDS
 	#define CC_BUILD_HTTPCLIENT
 	#define CC_BUILD_BEARSSL
+	#define CC_BUILD_SPLITSCREEN
 #elif defined XENON
 	/* libxenon also defines __linux__ (yes, really) */
 	#define CC_BUILD_XBOX360
@@ -292,6 +293,7 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_COOPTHREADED
 	#define CC_BUILD_HTTPCLIENT
 	#define CC_BUILD_BEARSSL
+	#define CC_BUILD_SPLITSCREEN
 #elif defined __vita__
 	#define CC_BUILD_PSVITA
 	#define CC_BUILD_CONSOLE
@@ -306,6 +308,7 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_LOWMEM
 	#define CC_BUILD_HTTPCLIENT
 	#define CC_BUILD_BEARSSL
+	#define CC_BUILD_SPLITSCREEN
 	#undef  CC_BUILD_RESOURCES
 #elif defined PLAT_PS3
 	#define CC_BUILD_PS3
@@ -314,13 +317,15 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_OPENAL
 	#define CC_BUILD_HTTPCLIENT
 	#define CC_BUILD_BEARSSL
+	#define CC_BUILD_SPLITSCREEN
 #elif defined N64
 	#define CC_BIG_ENDIAN
 	#define CC_BUILD_N64
 	#define CC_BUILD_CONSOLE
 	#define CC_BUILD_LOWMEM
 	#define CC_BUILD_COOPTHREADED
-	#define CC_BUILD_OPENAL
+	#define CC_BUILD_NOMUSIC
+	#define CC_BUILD_NOSOUNDS
 	#undef  CC_BUILD_RESOURCES
 	#undef  CC_BUILD_NETWORKING
 	#undef  CC_BUILD_FILESYSTEM
@@ -349,6 +354,7 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_OPENAL
 	#define CC_BUILD_HTTPCLIENT
 	#define CC_BUILD_BEARSSL
+	#define CC_BUILD_SPLITSCREEN
 	#define CC_BUILD_TOUCH
 #elif defined __SWITCH__
 	#define CC_BUILD_SWITCH

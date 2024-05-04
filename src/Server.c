@@ -264,7 +264,7 @@ static void MPConnection_FailConnect(cc_result result) {
 	String_InitArray(msg, msgBuffer);
 
 	if (result) {
-		String_Format3(&msg, "Error connecting to %s:%i: %i" _NL, &Server.Address, &Server.Port, &result);
+		String_Format3(&msg, "Error connecting to %s:%i: %e" _NL, &Server.Address, &Server.Port, &result);
 		Logger_Log(&msg);
 	}
 	MPConnection_Fail(&reason);
@@ -355,7 +355,7 @@ static void MPConnection_Disconnect(void) {
 static void DisconnectReadFailed(cc_result res) {
 	cc_string msg; char msgBuffer[STRING_SIZE * 2];
 	String_InitArray(msg, msgBuffer);
-	String_Format3(&msg, "Error reading from %s:%i: %i" _NL, &Server.Address, &Server.Port, &res);
+	String_Format3(&msg, "Error reading from %s:%i: %e" _NL, &Server.Address, &Server.Port, &res);
 
 	Logger_Log(&msg);
 	MPConnection_Disconnect();
@@ -407,7 +407,7 @@ static void MPConnection_Tick(struct ScheduledTask* task) {
 			if (cpe_needD3Fix && lastOpcode == OPCODE_HACK_CONTROL && (opcode == 0x00 || opcode == 0xFF)) {
 				Platform_LogConst("Skipping invalid HackControl byte from D3 server");
 				readCur++;
-				LocalPlayer_ResetJumpVelocity();
+				LocalPlayer_ResetJumpVelocity(Entities.CurPlayer);
 				continue;
 			}
 
@@ -432,7 +432,7 @@ static void MPConnection_Tick(struct ScheduledTask* task) {
 	}
 
 	if (net_writeFailure) {
-		Platform_Log1("Error from send: %i", &net_writeFailure);
+		Platform_Log1("Error from send: %e", &net_writeFailure);
 		MPConnection_Disconnect(); return;
 	}
 
@@ -491,7 +491,7 @@ static void OnNewMap(void) {
 	if (Server.IsSinglePlayer) return;
 
 	/* wipe all existing entities */
-	for (i = 0; i < ENTITIES_SELF_ID; i++) 
+	for (i = 0; i < MAX_NET_PLAYERS; i++) 
 	{
 		Entities_Remove((EntityID)i);
 	}

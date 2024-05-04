@@ -4,7 +4,8 @@
 #include "Errors.h"
 #include "Logger.h"
 #include "Window.h"
-#include "../third_party/gldc/include/gldc.h"
+#include "../third_party/gldc/gldc.h"
+#include "../third_party/gldc/src/draw.c"
 #include <malloc.h>
 #include <kos.h>
 #include <dc/matrix.h>
@@ -30,7 +31,7 @@ static void InitGLState(void) {
 
 void Gfx_Create(void) {
 	if (!Gfx.Created) glKosInit();
-	glViewport(0, 0, vid_mode->width, vid_mode->height);
+	Gfx_SetViewport(0, 0, Game.Width, Game.Height);
 	InitGLState();
 	
 	Gfx.MinTexWidth  = 8;
@@ -104,10 +105,10 @@ void Gfx_CalcOrthoMatrix(struct Matrix* matrix, float width, float height, float
 	matrix->row4.z = -(zFar + zNear) / (zFar - zNear);
 }
 
-static double Cotangent(double x) { return Math_Cos(x) / Math_Sin(x); }
+static float Cotangent(float x) { return Math_CosF(x) / Math_SinF(x); }
 void Gfx_CalcPerspectiveMatrix(struct Matrix* matrix, float fov, float aspect, float zFar) {
 	float zNear = 0.1f;
-	float c = (float)Cotangent(0.5f * fov);
+	float c = Cotangent(0.5f * fov);
 
 	/* Transposed, source https://learn.microsoft.com/en-us/windows/win32/opengl/glfrustum */
 	/* For a FOV based perspective matrix, left/right/top/bottom are calculated as: */
@@ -465,6 +466,22 @@ cc_bool Gfx_WarnIfNecessary(void) {
 *----------------------------------------------------------Drawing--------------------------------------------------------*
 *#########################################################################################################################*/
 #define VB_PTR gfx_vertices
+static const void* VERTEX_PTR;
+
+extern void DrawColouredQuads(const void* src, Vertex* dst, int numQuads);
+extern void DrawTexturedQuads(const void* src, Vertex* dst, int numQuads);
+
+void DrawQuads(int count) {
+	if (!count) return;
+	Vertex* start = submitVertices(count);
+
+	if (TEXTURES_ENABLED) {
+		DrawTexturedQuads(VERTEX_PTR, start, count >> 2);
+	} else {
+		DrawColouredQuads(VERTEX_PTR, start, count >> 2);
+	}
+}
+
 
 static void SetupVertices(int startVertex) {
 	if (gfx_format == VERTEX_FORMAT_TEXTURED) {
@@ -489,29 +506,33 @@ void Gfx_SetVertexFormat(VertexFormat fmt) {
 }
 
 void Gfx_DrawVb_Lines(int verticesCount) {
-	SetupVertices(0);
+	//SetupVertices(0);
 	//glDrawArrays(GL_LINES, 0, verticesCount);
 }
 
 void Gfx_DrawVb_IndexedTris_Range(int verticesCount, int startVertex) {
-	SetupVertices(startVertex);
-	glDrawArrays(GL_QUADS, 0, verticesCount);
+	if (gfx_format == VERTEX_FORMAT_TEXTURED) {
+                VERTEX_PTR = gfx_vertices + startVertex * SIZEOF_VERTEX_TEXTURED;
+        } else {
+                VERTEX_PTR = gfx_vertices + startVertex * SIZEOF_VERTEX_COLOURED;
+        }
+
+	DrawQuads(verticesCount);
 }
 
 void Gfx_DrawVb_IndexedTris(int verticesCount) {
-	SetupVertices(0);
-	
+	VERTEX_PTR = gfx_vertices;
+
 	if (textureOffset) ShiftTextureCoords(verticesCount);
-	glDrawArrays(GL_QUADS, 0, verticesCount);
+	DrawQuads(verticesCount);
 	if (textureOffset) UnshiftTextureCoords(verticesCount);
 }
 
 void Gfx_DrawIndexedTris_T2fC4b(int verticesCount, int startVertex) {
 	if (renderingDisabled) return;
 	
-	cc_uint32 offset = startVertex * SIZEOF_VERTEX_TEXTURED;
-	gldcVertexPointer(SIZEOF_VERTEX_TEXTURED, (void*)(VB_PTR + offset));
-	glDrawArrays(GL_QUADS, 0, verticesCount);
+	VERTEX_PTR = gfx_vertices + startVertex * SIZEOF_VERTEX_TEXTURED;
+	DrawQuads(verticesCount);
 }
 
 
@@ -555,6 +576,17 @@ void Gfx_EndFrame(void) {
 }
 
 void Gfx_OnWindowResize(void) {
-	glViewport(0, 0, Game.Width, Game.Height);
+	Gfx_SetViewport(0, 0, Game.Width, Game.Height);
+}
+
+void Gfx_SetViewport(int x, int y, int w, int h) {
+	if (x == 0 && y == 0 && w == Game.Width && h == Game.Height) {
+		glDisable(GL_SCISSOR_TEST);
+	} else {
+		glEnable(GL_SCISSOR_TEST);
+	}
+	
+	glViewport(x, y, w, h);
+	glScissor (x, y, w, h);
 }
 #endif

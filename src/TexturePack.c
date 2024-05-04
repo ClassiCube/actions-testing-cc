@@ -44,6 +44,21 @@ static BitmapCol fallback_terrain[16 * 8] = {
 	BitmapColor_RGB( 52,  90, 134), BitmapColor_RGB( 57, 115, 158), BitmapColor_RGB( 52,  90, 134), BitmapColor_RGB( 57, 115, 158), BitmapColor_RGB( 52,  90, 134), BitmapColor_RGB( 57, 115, 158), BitmapColor_RGB( 52,  90, 134), BitmapColor_RGB( 57, 115, 158),
 };
 
+static void LoadFallbackAtlas(void) {
+	struct Bitmap bmp, src;
+	src.width  = 16;
+	src.height = 8;
+	src.scan0  = fallback_terrain;
+	
+	if (Gfx.MinTexWidth || Gfx.MinTexHeight) {
+		Bitmap_Allocate(&bmp, 16 * Gfx.MinTexWidth, 8 * Gfx.MinTexHeight);
+		Bitmap_Scale(&bmp, &src, 0, 0, 16, 8);
+		Atlas_TryChange(&bmp);
+	} else {
+		Atlas_TryChange(&src);
+	}
+}
+
 /*########################################################################################################################*
 *------------------------------------------------------TerrainAtlas-------------------------------------------------------*
 *#########################################################################################################################*/
@@ -499,13 +514,7 @@ cc_result TexturePack_ExtractCurrent(cc_bool forceReload) {
 	}
 
 	/* Use fallback terrain texture with 1 pixel per tile */
-	if (!Atlas2D.Bmp.scan0) {
-		struct Bitmap tmp;
-		tmp.width  = 16;
-		tmp.height = 8;
-		tmp.scan0  = fallback_terrain;
-		Atlas_TryChange(&tmp);
-	}
+	if (!Atlas2D.Bmp.scan0) LoadFallbackAtlas();
 	return res;
 }
 

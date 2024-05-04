@@ -35,7 +35,7 @@ static void AddWidget(void* screen, void* w) {
 /*########################################################################################################################*
 *-------------------------------------------------------TextWidget--------------------------------------------------------*
 *#########################################################################################################################*/
-static void TextWidget_Render(void* widget, double delta) {
+static void TextWidget_Render(void* widget, float delta) {
 	struct TextWidget* w = (struct TextWidget*)widget;
 	if (w->tex.ID) Texture_RenderShaded(&w->tex, w->color);
 }
@@ -131,7 +131,7 @@ static void ButtonWidget_Reposition(void* widget) {
 	w->tex.y = w->y + (w->height / 2 - w->tex.height / 2);
 }
 
-static void ButtonWidget_Render(void* widget, double delta) {
+static void ButtonWidget_Render(void* widget, float delta) {
 	PackedCol normColor     = PackedCol_Make(224, 224, 224, 255);
 	PackedCol activeColor   = PackedCol_Make(255, 255, 160, 255);
 	PackedCol disabledColor = PackedCol_Make(160, 160, 160, 255);
@@ -232,10 +232,6 @@ static const struct WidgetVTABLE ButtonWidget_VTABLE = {
 	Widget_Pointer,      Widget_PointerUp,  Widget_PointerMove,
 	ButtonWidget_BuildMesh, ButtonWidget_Render2, ButtonWidget_MaxVertices
 };
-void ButtonWidget_Make(struct ButtonWidget* w, int minWidth, Widget_LeftClick onClick, cc_uint8 horAnchor, cc_uint8 verAnchor, int xOffset, int yOffset) {
-	ButtonWidget_Init(w, minWidth, onClick);
-	Widget_SetLocation(w, horAnchor, verAnchor, xOffset, yOffset);
-}
 
 void ButtonWidget_Init(struct ButtonWidget* w, int minWidth, Widget_LeftClick onClick) {
 	Widget_Reset(w);
@@ -297,7 +293,7 @@ static void ScrollbarWidget_GetScrollbarCoords(struct ScrollbarWidget* w, int* y
 	*height = min(*y + *height, w->height - w->borderY) - *y;
 }
 
-static void ScrollbarWidget_Render(void* widget, double delta) {
+static void ScrollbarWidget_Render(void* widget, float delta) {
 	struct ScrollbarWidget* w = (struct ScrollbarWidget*)widget;
 	int x, y, width, height;
 	PackedCol barCol;
@@ -485,20 +481,21 @@ static int HotbarWidget_Render2(void* widget, int offset) {
 
 static int HotbarWidget_MaxVertices(void* w) { return HOTBAR_MAX_VERTICES; }
 
-void HotbarWidget_Update(struct HotbarWidget* w, double delta) {
+void HotbarWidget_Update(struct HotbarWidget* w, float delta) {
 #ifdef CC_BUILD_TOUCH
 	int i;
 	if (!Gui.TouchUI) return;
 
-	for (i = 0; i < HOTBAR_MAX_INDEX; i++) {
-		if(w->touchId[i] != -1) {
-			w->touchTime[i] += delta;
-			if(w->touchTime[i] > 1) {
-				w->touchId[i] = -1;
-				w->touchTime[i] = 0;
-				Inventory_Set(i, 0);
-			}
-		}
+	for (i = 0; i < HOTBAR_MAX_INDEX; i++) 
+	{
+		if (w->touchId[i] < 0) continue;
+		
+		w->touchTime[i] += delta;
+		if (w->touchTime[i] <= 1.0f) continue;
+		
+		w->touchId[i]   = -1;
+		w->touchTime[i] =  0;
+		Inventory_Set(i, 0);
 	}
 #endif
 }
@@ -978,20 +975,15 @@ static int TableWidget_PointerMove(void* widget, int id, int x, int y) {
 
 static int TableWidget_KeyDown(void* widget, int key) {
 	struct TableWidget* w = (struct TableWidget*)widget;
+	int delta;
 	if (w->selectedIndex == -1) return false;
 
-	if (Input_IsLeftButton(key)         || key == CCKEY_KP4) {
-		TableWidget_ScrollRelative(w, -1);
-	} else if (Input_IsRightButton(key) || key == CCKEY_KP6) {
-		TableWidget_ScrollRelative(w, 1);
-	} else if (Input_IsUpButton(key)    || key == CCKEY_KP8) {
-		TableWidget_ScrollRelative(w, -w->blocksPerRow);
-	} else if (Input_IsDownButton(key)  || key == CCKEY_KP2) {
-		TableWidget_ScrollRelative(w, w->blocksPerRow);
-	} else {
-		return false;
+	delta = Input_CalcDelta(key, 1, w->blocksPerRow);
+	if (delta) {
+		TableWidget_ScrollRelative(w, delta);
+		return true;
 	}
-	return true;
+	return false;
 }
 
 static int TableWidget_PadAxis(void* widget, int axis, float x, float y) {
@@ -1015,7 +1007,7 @@ static const struct WidgetVTABLE TableWidget_VTABLE = {
 	TableWidget_BuildMesh,   TableWidget_Render2,   TableWidget_MaxVertices,
 	TableWidget_PadAxis
 };
-void TableWidget_Create(struct TableWidget* w, int sbWidth) {
+void TableWidget_Add(void* screen, struct TableWidget* w, int sbWidth) {
 	cc_bool classic;
 	Widget_Reset(w);
 	w->VTABLE = &TableWidget_VTABLE;
@@ -1032,6 +1024,7 @@ void TableWidget_Create(struct TableWidget* w, int sbWidth) {
 		w->everCreated   = true;
 		w->selectedIndex = -1;
 	}
+	AddWidget(screen, w);
 
 	classic     = Gui.ClassicInventory;
 	w->paddingL = Display_ScaleX(classic ? 20 : 15);
@@ -1188,12 +1181,12 @@ static void InputWidget_UpdateCaret(struct InputWidget* w) {
 	}
 }
 
-static void InputWidget_RenderCaret(struct InputWidget* w, double delta) {
+static void InputWidget_RenderCaret(struct InputWidget* w, float delta) {
 	float second;
 	if (!w->showCaret) return;
 	w->caretAccumulator += delta;
 
-	second = Math_Mod1((float)w->caretAccumulator);
+	second = Math_Mod1(w->caretAccumulator);
 	if (second < 0.5f) Texture_RenderShaded(&w->caretTex, w->caretCol);
 }
 
@@ -1599,7 +1592,7 @@ const struct MenuInputVTABLE StringInput_VTABLE = {
 /*########################################################################################################################*
 *-----------------------------------------------------TextInputWidget-----------------------------------------------------*
 *#########################################################################################################################*/
-static void TextInputWidget_Render(void* widget, double delta) {
+static void TextInputWidget_Render(void* widget, float delta) {
 	struct InputWidget* w = (struct InputWidget*)widget;
 	Texture_Render(&w->inputTex);
 	InputWidget_RenderCaret(w, delta);
@@ -1818,7 +1811,7 @@ static void ChatInputWidget_RemakeTexture(void* widget) {
 	w->inputTex.y = w->y;
 }
 
-static void ChatInputWidget_Render(void* widget, double delta) {
+static void ChatInputWidget_Render(void* widget, float delta) {
 	struct InputWidget* w = (struct InputWidget*)widget;
 	PackedCol backColor   = PackedCol_Make(0, 0, 0, 127);
 	int x = w->x, y = w->y;
@@ -2405,7 +2398,7 @@ void TextGroupWidget_SetFont(struct TextGroupWidget* w, struct FontDesc* font) {
 	Widget_Layout(w);
 }
 
-static void TextGroupWidget_Render(void* widget, double delta) {
+static void TextGroupWidget_Render(void* widget, float delta) {
 	struct TextGroupWidget* w = (struct TextGroupWidget*)widget;
 	struct Texture* textures  = w->textures;
 	int i;
@@ -2660,7 +2653,7 @@ void SpecialInputWidget_Redraw(struct SpecialInputWidget* w) {
 	Widget_Layout(w);
 }
 
-static void SpecialInputWidget_Render(void* widget, double delta) {
+static void SpecialInputWidget_Render(void* widget, float delta) {
 	struct SpecialInputWidget* w = (struct SpecialInputWidget*)widget;
 	Texture_Render(&w->tex);
 }
@@ -2785,7 +2778,7 @@ static int ThumbstickWidget_CalcDirs(struct ThumbstickWidget* w) {
 
 		dx = Pointers[i].x - (w->x + w->width  / 2);
 		dy = Pointers[i].y - (w->y + w->height / 2);
-		angle = Math_Atan2(dx, dy) * MATH_RAD2DEG;
+		angle = Math_Atan2f(dx, dy) * MATH_RAD2DEG;
 
 		/* 4 quadrants diagonally, but slightly expanded for overlap*/
 		if (angle >=   30 && angle <= 150) dirs |= DIR_YMAX;
