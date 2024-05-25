@@ -18,7 +18,7 @@ jobs:
           COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn"
           MAC64_FLAGS:  "-fvisibility=hidden -rdynamic -DCC_BUILD_ICON -arch i386"
         run: |
-          xcode-select --switch /Applications/Xcode_13.1.app
+          sudo xcode-select --switch /Applications/Xcode_13.1.app
           LATEST_FLAG=-DCC_COMMIT_SHA=\"$(git rev-parse --short "$GITHUB_SHA")\"  
           
           cd src
