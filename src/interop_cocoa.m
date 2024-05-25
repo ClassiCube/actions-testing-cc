@@ -6,23 +6,7 @@
 #include "String.h"
 #include "Options.h"
 #import <Foundation/Foundation.h>
-#import <AppKit/AppKitDefines.h>
-#import <AppKit/AppKitErrors.h>
-#import <AppKit/NSGraphicsContext.h>
-#import <AppKit/NSAlert.h>
-#import <AppKit/NSApplication.h>
-#import <AppKit/NSErrors.h>
-#import <AppKit/NSEvent.h>
-#import <AppKit/NSGraphics.h>
-#import <AppKit/NSImage.h>
-#import <AppKit/NSOpenPanel.h>
-#import <AppKit/NSPanel.h>
-#import <AppKit/NSPasteboard.h>
-#import <AppKit/NSSavePanel.h>
-#import <AppKit/NSView.h>
-#import <AppKit/NSWindow.h>
-#import <AppKit/NSOpenGL.h>
-#import <AppKit/NSOpenGLView.h>
+#import <AppKit/AppKit.h>
 #include <ApplicationServices/ApplicationServices.h>
 
 static int windowX, windowY;
