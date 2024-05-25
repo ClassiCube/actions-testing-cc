@@ -1,8 +1,8 @@
-name: Build latest (macOS 64 bit)
+name: Build latest (macOS ARM64)
 on: [push]
 
 concurrency:
-  group: ${{ github.ref }}-mac64
+  group: ${{ github.ref }}-mac-ARM64
   cancel-in-progress: true
 
 jobs:
@@ -21,8 +21,9 @@ jobs:
           LATEST_FLAG=-DCC_COMMIT_SHA=\"$(git rev-parse --short "$GITHUB_SHA")\"  
           
           cd src
-          clang *.c interop_cocoa.m ${{ env.COMMON_FLAGS }} ${{ env.MAC_FLAGS }} $LATEST_FLAG -o cc-mac-arm -framework Cocoa -framework OpenGL -framework IOKit -lobjc
-
+          clang *.c interop_cocoa.m ${{ env.COMMON_FLAGS }} ${{ env.MAC_FLAGS }} $LATEST_FLAG -o cc-mac-arm64 -framework Cocoa -framework OpenGL -framework IOKit -lobjc
+          # https://wiki.freepascal.org/Code_Signing_for_macOS#Ad_hoc_signing
+          codesign -dv -r- cc-mac-arm64
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
@@ -34,5 +35,5 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'src/cc-mac-arm'
+          SOURCE_FILE: 'src/cc-mac-arm64'
           DEST_NAME: 'ClassiCube-mac-ARM64'
