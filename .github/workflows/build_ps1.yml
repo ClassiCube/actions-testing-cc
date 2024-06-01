@@ -17,7 +17,7 @@ jobs:
         id: compile
         run: |
           apt-get update
-          apt-get install -y curl cmake
+          apt-get install -y curl
           export PSNOOB=/usr/local/psnoob
           export PSL1GHT=/usr/local/ps3dev
           export PATH=$PATH:$PSNOOB/bin
@@ -30,10 +30,35 @@ jobs:
         with:
           NOTIFY_MESSAGE: 'Failed to compile PS1 build'
           WEBHOOK_URL: '${{ secrets.WEBHOOK_URL }}'
+
+
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'misc/ps1/build/template.elf'
+          DEST_NAME: 'ClassiCube-PS1.elf'
+
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'misc/ps1/build/template.exe'
+          DEST_NAME: 'ClassiCube-PS1.exe'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'misc/ps1/build/template.bin'
+          DEST_NAME: 'ClassiCube-PS1.bin'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'misc/ps1/build/template.cue'
+          DEST_NAME: 'ClassiCube-PS1.cue'
           
           
       - uses: ./.github/actions/notify_success
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           DESTINATION_URL: '${{ secrets.NOTIFY_URL }}'
-          WORKFLOW_NAME: 'ps3'
+          WORKFLOW_NAME: 'ps1'
