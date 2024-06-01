@@ -17,7 +17,7 @@ jobs:
         id: compile
         run: |
           apt-get update
-          apt-get install -y curl
+          apt-get install -y curl cmake
           export PSNOOB=/usr/local/psnoob
           export PSL1GHT=/usr/local/ps3dev
           export PATH=$PATH:$PSNOOB/bin
