@@ -88,6 +88,7 @@ static struct CpeExt
 	customModels_Ext    = { "CustomModels", 2 },
 	pluginMessages_Ext  = { "PluginMessages", 1 },
 	extTeleport_Ext     = { "ExtEntityTeleport", 1 },
+	lightingMode_Ext    = { "LightingMode", 1 },
 	extTextures_Ext     = { "ExtendedTextures", 1 },
 	extBlocks_Ext       = { "ExtendedBlocks", 1 };
 
@@ -97,7 +98,7 @@ static struct CpeExt* cpe_clientExtensions[] = {
 	&messageTypes_Ext, &hackControl_Ext, &playerClick_Ext, &fullCP437_Ext, &longerMessages_Ext, &blockDefs_Ext,
 	&blockDefsExt_Ext, &bulkBlockUpdate_Ext, &textColors_Ext, &envMapAspect_Ext, &entityProperty_Ext, &extEntityPos_Ext,
 	&twoWayPing_Ext, &invOrder_Ext, &instantMOTD_Ext, &fastMap_Ext, &setHotbar_Ext, &setSpawnpoint_Ext, &velControl_Ext,
-	&customParticles_Ext, &pluginMessages_Ext, &extTeleport_Ext,
+	&customParticles_Ext, &pluginMessages_Ext, &extTeleport_Ext, &lightingMode_Ext,
 #ifdef CUSTOM_MODELS
 	&customModels_Ext,
 #endif
@@ -1155,17 +1156,21 @@ static void CPE_SetEnvCol(cc_uint8* data) {
 	c = PackedCol_Make(data[2], data[4], data[6], 255);
 
 	if (variable == 0) {
-		Env_SetSkyCol(invalid    ? ENV_DEFAULT_SKY_COLOR    : c);
-	} else if (variable == 1) {
-		Env_SetCloudsCol(invalid ? ENV_DEFAULT_CLOUDS_COLOR : c);
-	} else if (variable == 2) {
-		Env_SetFogCol(invalid    ? ENV_DEFAULT_FOG_COLOR    : c);
-	} else if (variable == 3) {
-		Env_SetShadowCol(invalid ? ENV_DEFAULT_SHADOW_COLOR : c);
-	} else if (variable == 4) {
-		Env_SetSunCol(invalid    ? ENV_DEFAULT_SUN_COLOR    : c);
-	} else if (variable == 5) {
-		Env_SetSkyboxCol(invalid ? ENV_DEFAULT_SKYBOX_COLOR : c);
+		Env_SetSkyCol(invalid        ? ENV_DEFAULT_SKY_COLOR      : c);
+	} else if (variable == 1) {	     
+		Env_SetCloudsCol(invalid     ? ENV_DEFAULT_CLOUDS_COLOR   : c);
+	} else if (variable == 2) {	     
+		Env_SetFogCol(invalid        ? ENV_DEFAULT_FOG_COLOR      : c);
+	} else if (variable == 3) {	     
+		Env_SetShadowCol(invalid     ? ENV_DEFAULT_SHADOW_COLOR   : c);
+	} else if (variable == 4) {	     
+		Env_SetSunCol(invalid        ? ENV_DEFAULT_SUN_COLOR      : c);
+	} else if (variable == 5) {	     
+		Env_SetSkyboxCol(invalid     ? ENV_DEFAULT_SKYBOX_COLOR   : c);
+	} else if (variable == 6) {
+		Env_SetLavaLightCol(invalid ? ENV_DEFAULT_LAVALIGHT_COLOR : c);
+	} else if (variable == 7) {
+		Env_SetLampLightCol(invalid ? ENV_DEFAULT_LAMPLIGHT_COLOR : c);
 	}
 }
 
@@ -1526,6 +1531,30 @@ static void CPE_ExtEntityTeleport(cc_uint8* data) {
 	Classic_ReadAbsoluteLocation(data, id, flags);
 }
 
+static void CPE_LightingMode(cc_uint8* data) {
+	cc_uint8  mode = *data++;
+	cc_bool locked = *data++ != 0;
+
+	if (mode == 0) {
+		if (!Lighting_ModeSetByServer) return;
+		/* locked is ignored with mode 0 and always set to false */
+		Lighting_ModeLockedByServer = false;
+		Lighting_ModeSetByServer    = false;
+
+		Lighting_SetMode(Lighting_ModeUserCached, true);
+		return;
+	}
+	/* Convert from Network mode (0 = no change, 1 = classic, 2 = fancy) to client mode (0 = classic, 1 = fancy) */
+	mode--;
+	if (mode >= LIGHTING_MODE_COUNT) return;
+
+	if (!Lighting_ModeSetByServer) Lighting_ModeUserCached = Lighting_Mode;
+	Lighting_ModeLockedByServer = locked;
+	Lighting_ModeSetByServer    = true;
+
+	Lighting_SetMode(mode, true);
+}
+
 static void CPE_Reset(void) {
 	cpe_serverExtensionsCount = 0; cpe_pingTicks = 0;
 	CPEExtensions_Reset();
@@ -1568,6 +1597,7 @@ static void CPE_Reset(void) {
 	Net_Set(OPCODE_SPAWN_EFFECT, CPE_SpawnEffect, 26);
 	Net_Set(OPCODE_PLUGIN_MESSAGE, CPE_PluginMessage, 66);
 	Net_Set(OPCODE_ENTITY_TELEPORT_EXT, CPE_ExtEntityTeleport, 11);
+	Net_Set(OPCODE_LIGHTING_MODE, CPE_LightingMode, 3);
 }
 
 static cc_uint8* CPE_Tick(cc_uint8* data) {
@@ -1584,13 +1614,12 @@ static cc_uint8* CPE_Tick(cc_uint8* data) {
 *------------------------------------------------------Custom models------------------------------------------------------*
 *#########################################################################################################################*/
 static void CPE_DefineModel(cc_uint8* data) {
-	cc_uint8 id = data[0];
-	struct CustomModel* cm = &custom_models[id];
+	struct CustomModel* cm = CustomModel_Get(data[0]);
 	cc_string name;
 	cc_uint8 flags;
 	cc_uint8 numParts;
 
-	if (id >= MAX_CUSTOM_MODELS) return;
+	if (!cm) return;
 	CustomModel_Undefine(cm);
 	Model_Init(&cm->model);
 
@@ -1635,13 +1664,13 @@ static void CPE_DefineModel(cc_uint8* data) {
 }
 
 static void CPE_DefineModelPart(cc_uint8* data) {
-	cc_uint8 id = data[0];
-	struct CustomModel* m = &custom_models[id];
+	struct CustomModel* m;
 	struct CustomModelPart* part;
 	struct CustomModelPartDef p;
 	int i;
 
-	if (id >= MAX_CUSTOM_MODELS || !m->defined || m->curPartIndex >= m->numParts) return;
+	m = CustomModel_Get(data[0]);
+	if (!m || !m->defined || m->curPartIndex >= m->numParts) return;
 	part = &m->parts[m->curPartIndex];
 
 	p.min.x = GetFloat(data +  1);
@@ -1652,7 +1681,8 @@ static void CPE_DefineModelPart(cc_uint8* data) {
 	p.max.z = GetFloat(data + 21);
 
 	/* read u, v coords for our 6 faces */
-	for (i = 0; i < 6; i++) {
+	for (i = 0; i < 6; i++) 
+	{
 		p.u1[i] = Stream_GetU16_BE(data + 25 + (i*8 + 0));
 		p.v1[i] = Stream_GetU16_BE(data + 25 + (i*8 + 2));
 		p.u2[i] = Stream_GetU16_BE(data + 25 + (i*8 + 4));
@@ -1674,7 +1704,8 @@ static void CPE_DefineModelPart(cc_uint8* data) {
 		p.flags = data[165];
 
 		data += 97;
-		for (i = 0; i < MAX_CUSTOM_MODEL_ANIMS; i++) {
+		for (i = 0; i < MAX_CUSTOM_MODEL_ANIMS; i++) 
+		{
 			cc_uint8 tmp = *data++;
 			part->anims[i].type = tmp & 0x3F;
 			part->anims[i].axis = tmp >> 6;
@@ -1695,10 +1726,9 @@ static void CPE_DefineModelPart(cc_uint8* data) {
 	if (m->curPartIndex == m->numParts) CustomModel_Register(m);
 }
 
-/* unregisters and frees the custom model */
 static void CPE_UndefineModel(cc_uint8* data) {
-	cc_uint8 id = data[0];
-	if (id < MAX_CUSTOM_MODELS) CustomModel_Undefine(&custom_models[id]);
+	struct CustomModel* cm = CustomModel_Get(data[0]);
+	if (cm) CustomModel_Undefine(cm);
 }
 
 static void CustomModels_Reset(void) {
@@ -1716,10 +1746,17 @@ static void CustomModels_Reset(void) { }
 /*########################################################################################################################*
 *------------------------------------------------------Custom blocks------------------------------------------------------*
 *#########################################################################################################################*/
-static void BlockDefs_OnBlockUpdated(BlockID block, cc_bool didBlockLight) {
+static void BlockDefs_OnBlocksLightPropertyUpdated(BlockID block, cc_bool oldProp) {
 	if (!World.Loaded) return;
 	/* Need to refresh lighting when a block's light blocking state changes */
-	if (Blocks.BlocksLight[block] != didBlockLight) Lighting.Refresh();
+	if (Blocks.BlocksLight[block] != oldProp) Lighting.Refresh();
+}
+
+static void BlockDefs_OnBrightnessPropertyUpdated(BlockID block, cc_uint8 oldProp) {
+	if (!World.Loaded) return;
+	if (Lighting_Mode == LIGHTING_MODE_CLASSIC) return;
+	/* Need to refresh fancy lighting when a block's brightness changes */
+	if (Blocks.Brightness[block] != oldProp) Lighting.Refresh();
 }
 
 static TextureLoc BlockDefs_Tex(cc_uint8** ptr) {
@@ -1738,13 +1775,15 @@ static TextureLoc BlockDefs_Tex(cc_uint8** ptr) {
 static BlockID BlockDefs_DefineBlockCommonStart(cc_uint8** ptr, cc_bool uniqueSideTexs) {
 	cc_string name;
 	BlockID block;
-	cc_bool didBlockLight;
+	cc_bool oldBlocksLight;
+	cc_uint8 oldBrightness;
 	float speedLog2;
 	cc_uint8 sound;
 	cc_uint8* data = *ptr;
 
 	ReadBlock(data, block);
-	didBlockLight = Blocks.BlocksLight[block];
+	oldBlocksLight = Blocks.BlocksLight[block];
+	oldBrightness = Blocks.Brightness[block];
 	Block_ResetProps(block);
 	
 	name = UNSAFE_GetString(data); data += STRING_SIZE;
@@ -1766,14 +1805,15 @@ static BlockID BlockDefs_DefineBlockCommonStart(cc_uint8** ptr, cc_bool uniqueSi
 	Block_Tex(block, FACE_YMIN) = BlockDefs_Tex(&data);
 
 	Blocks.BlocksLight[block] = *data++ == 0;
-	BlockDefs_OnBlockUpdated(block, didBlockLight);
+	BlockDefs_OnBlocksLightPropertyUpdated(block, oldBlocksLight);
 
 	sound = *data++;
 	Blocks.StepSounds[block] = sound;
 	Blocks.DigSounds[block]  = sound;
 	if (sound == SOUND_GLASS) Blocks.StepSounds[block] = SOUND_STONE;
 
-	Blocks.FullBright[block] = *data++ != 0;
+	Blocks.Brightness[block] = Block_ReadBrightness(*data++);
+	BlockDefs_OnBrightnessPropertyUpdated(block, oldBrightness);
 	*ptr = data;
 	return block;
 }
@@ -1810,7 +1850,7 @@ static void BlockDefs_UndefineBlock(cc_uint8* data) {
 	didBlockLight = Blocks.BlocksLight[block];
 
 	Block_UndefineCustom(block);
-	BlockDefs_OnBlockUpdated(block, didBlockLight);
+	BlockDefs_OnBlocksLightPropertyUpdated(block, didBlockLight);
 }
 
 static void BlockDefs_DefineBlockExt(cc_uint8* data) {

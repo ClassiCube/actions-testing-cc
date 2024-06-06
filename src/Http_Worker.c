@@ -41,6 +41,14 @@ static void Http_ParseCookie(struct HttpRequest* req, const cc_string* value) {
 	EntryList_Set(req->cookies, &name, &data, '=');
 }
 
+static void Http_ParseContentLength(struct HttpRequest* req, const cc_string* value) {
+	int contentLen = 0;
+	Convert_ParseInt(value, &contentLen);
+	
+	if (contentLen <= 0) return;
+	req->contentLength = contentLen;
+}
+
 /* Parses a HTTP header */
 static void Http_ParseHeader(struct HttpRequest* req, const cc_string* line) {
 	static const cc_string httpVersion = String_FromConst("HTTP");
@@ -58,11 +66,11 @@ static void Http_ParseHeader(struct HttpRequest* req, const cc_string* line) {
 	if (String_CaselessEqualsConst(&name, "ETag")) {
 		String_CopyToRawArray(req->etag, &value);
 	} else if (String_CaselessEqualsConst(&name, "Content-Length")) {
-		Convert_ParseInt(&value, &req->contentLength);
+		Http_ParseContentLength(req, &value);
 	} else if (String_CaselessEqualsConst(&name, "X-Dropbox-Content-Length")) {
 		/* dropbox stopped returning Content-Length header since switching to chunked transfer */
 		/*  https://www.dropboxforum.com/t5/Discuss-Dropbox-Developer-API/Dropbox-media-can-t-be-access-by-azure-blob/td-p/575458 */
-		Convert_ParseInt(&value, &req->contentLength);
+		Http_ParseContentLength(req, &value);
 	} else if (String_CaselessEqualsConst(&name, "Last-Modified")) {
 		String_CopyToRawArray(req->lastModified, &value);
 	} else if (req->cookies && String_CaselessEqualsConst(&name, "Set-Cookie")) {
@@ -558,6 +566,7 @@ static cc_result ConnectionPool_Open(struct HttpConnection** conn, const struct 
 *--------------------------------------------------------HttpClient-------------------------------------------------------*
 *#########################################################################################################################*/
 enum HTTP_RESPONSE_STATE {
+	HTTP_RESPONSE_STATE_INITIAL,
 	HTTP_RESPONSE_STATE_HEADER,
 	HTTP_RESPONSE_STATE_DATA,
 	HTTP_RESPONSE_STATE_CHUNK_HEADER,
@@ -583,7 +592,7 @@ struct HttpClientState {
 };
 
 static void HttpClientState_Reset(struct HttpClientState* state) {
-	state->state       = HTTP_RESPONSE_STATE_HEADER;
+	state->state       = HTTP_RESPONSE_STATE_INITIAL;
 	state->chunked     = 0;
 	state->dataLeft    = 0;
 	state->autoClose   = false;
@@ -705,6 +714,9 @@ static cc_result HttpClient_Process(struct HttpClientState* state, char* buffer,
 
 	while (offset < total) {
 		switch (state->state) {
+		case HTTP_RESPONSE_STATE_INITIAL:
+			state->state = HTTP_RESPONSE_STATE_HEADER;
+			break;
 
 		case HTTP_RESPONSE_STATE_HEADER:
 		{
@@ -836,8 +848,8 @@ static cc_result HttpClient_ParseResponse(struct HttpClientState* state) {
 		if (res) return res;
 
 		if (total == 0) {
-			Platform_LogConst("Http read unexpectedly returned 0");
-			return ERR_END_OF_STREAM;
+			Platform_Log1("Http read unexpectedly returned 0 in state %i", &state->state);
+			return state->state == HTTP_RESPONSE_STATE_INITIAL ? HTTP_ERR_NO_RESPONSE : ERR_END_OF_STREAM;
 		}
 
 		if (dst != buffer) {
@@ -912,6 +924,11 @@ static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* urlStr) {
 		/* TODO: Can we handle this while preserving the TCP connection */
 		if (res == SSL_ERR_CONTEXT_DEAD && !retried) {
 			Platform_LogConst("Resetting connection due to SSL context being dropped..");
+			res = HttpBackend_PerformRequest(&state);
+			retried = true;
+		}
+		if (res == HTTP_ERR_NO_RESPONSE && !retried) {
+			Platform_LogConst("Resetting connection due to empty response..");
 			res = HttpBackend_PerformRequest(&state);
 			retried = true;
 		}
@@ -1360,10 +1377,10 @@ static void Http_Init(void) {
 	RequestList_Init(&pendingReqs);
 	RequestList_Init(&processedReqs);
 
-	workerWaitable  = Waitable_Create();
-	pendingMutex    = Mutex_Create();
-	processedMutex  = Mutex_Create();
-	curRequestMutex = Mutex_Create();
+	workerWaitable  = Waitable_Create("HTTP wakeup");
+	pendingMutex    = Mutex_Create("HTTP pending");
+	processedMutex  = Mutex_Create("HTTP processed");
+	curRequestMutex = Mutex_Create("HTTP current");
 	
 	Thread_Run(&workerThread, WorkerLoop, 128 * 1024, "HTTP");
 }

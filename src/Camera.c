@@ -27,10 +27,10 @@ void Camera_KeyLookUpdate(float delta) {
 	/* divide by 25 to have reasonable sensitivity for default mouse sens */
 	float amount = (Camera.Sensitivity / 25.0f) * (1000 * delta);
 
-	if (KeyBind_IsPressed(KEYBIND_LOOK_UP))    cam_deltaY -= amount;
-	if (KeyBind_IsPressed(KEYBIND_LOOK_DOWN))  cam_deltaY += amount;
-	if (KeyBind_IsPressed(KEYBIND_LOOK_LEFT))  cam_deltaX -= amount;
-	if (KeyBind_IsPressed(KEYBIND_LOOK_RIGHT)) cam_deltaX += amount;
+	if (InputBind_IsPressed(BIND_LOOK_UP))    cam_deltaY -= amount;
+	if (InputBind_IsPressed(BIND_LOOK_DOWN))  cam_deltaY += amount;
+	if (InputBind_IsPressed(BIND_LOOK_LEFT))  cam_deltaX -= amount;
+	if (InputBind_IsPressed(BIND_LOOK_RIGHT)) cam_deltaX += amount;
 }
 
 /*########################################################################################################################*
@@ -42,15 +42,17 @@ static void PerspectiveCamera_GetProjection(struct Matrix* proj) {
 	Gfx_CalcPerspectiveMatrix(proj, fovy, aspectRatio, (float)Game_ViewDistance);
 }
 
-static void PerspectiveCamera_GetView(struct LocalPlayer* p, struct Matrix* mat) {
+static void PerspectiveCamera_GetView(struct Matrix* mat) {
 	Vec3 pos = Camera.CurrentPos;
-	Vec2 rot = Camera.Active->GetOrientation(p);
+	Vec2 rot = Camera.Active->GetOrientation();
 	Matrix_LookRot(mat, pos, rot);
 	Matrix_MulBy(mat, &Camera.TiltM);
 }
 
-static void PerspectiveCamera_GetPickedBlock(struct LocalPlayer* p, struct RayTracer* t) {
-	struct Entity* e = &p->Base;
+static void PerspectiveCamera_GetPickedBlock(struct RayTracer* t) {
+	struct LocalPlayer* p = Entities.CurPlayer;
+	struct Entity* e      = &p->Base;
+
 	Vec3 dir    = Vec3_GetDirVector(e->Yaw * MATH_DEG2RAD, e->Pitch * MATH_DEG2RAD + Camera.TiltPitch);
 	Vec3 eyePos = Entity_GetEyePosition(e);
 	Picking_CalcPickedBlock(&eyePos, &dir, p->ReachDistance, t);
@@ -146,16 +148,20 @@ static void PerspectiveCamera_CalcViewBobbing(struct LocalPlayer* p, float t, fl
 /*########################################################################################################################*
 *---------------------------------------------------First person camera---------------------------------------------------*
 *#########################################################################################################################*/
-static Vec2 FirstPersonCamera_GetOrientation(struct LocalPlayer* p) {
+static Vec2 FirstPersonCamera_GetOrientation(void) {
+	struct LocalPlayer* p = Entities.CurPlayer;
 	struct Entity* e = &p->Base;
+
 	Vec2 v;	
 	v.x = e->Yaw   * MATH_DEG2RAD; 
 	v.y = e->Pitch * MATH_DEG2RAD;
 	return v;
 }
 
-static Vec3 FirstPersonCamera_GetPosition(struct LocalPlayer* p, float t) {
+static Vec3 FirstPersonCamera_GetPosition(float t) {
+	struct LocalPlayer* p = Entities.CurPlayer;
 	struct Entity* e = &p->Base;
+
 	Vec3 camPos   = Entity_GetEyePosition(e);
 	float yaw     = e->Yaw * MATH_DEG2RAD;
 	PerspectiveCamera_CalcViewBobbing(p, t, 1);
@@ -183,8 +189,10 @@ static struct Camera cam_FirstPerson = {
 #define DEF_ZOOM 3.0f
 static float dist_third = DEF_ZOOM, dist_forward = DEF_ZOOM;
 
-static Vec2 ThirdPersonCamera_GetOrientation(struct LocalPlayer* p) {
+static Vec2 ThirdPersonCamera_GetOrientation(void) {
+	struct LocalPlayer* p = Entities.CurPlayer;
 	struct Entity* e = &p->Base;
+
 	Vec2 v;	
 	v.x = e->Yaw   * MATH_DEG2RAD; 
 	v.y = e->Pitch * MATH_DEG2RAD;
@@ -202,8 +210,10 @@ static float ThirdPersonCamera_GetZoom(struct LocalPlayer* p) {
 	return dist;
 }
 
-static Vec3 ThirdPersonCamera_GetPosition(struct LocalPlayer* p, float t) {
+static Vec3 ThirdPersonCamera_GetPosition(float t) {
+	struct LocalPlayer* p = Entities.CurPlayer;
 	struct Entity* e = &p->Base;
+
 	float dist = ThirdPersonCamera_GetZoom(p);
 	Vec3 target, dir;
 	Vec2 rot;
@@ -212,7 +222,7 @@ static Vec3 ThirdPersonCamera_GetPosition(struct LocalPlayer* p, float t) {
 	target = Entity_GetEyePosition(e);
 	target.y += Camera.BobbingVer;
 
-	rot = Camera.Active->GetOrientation(p);
+	rot = Camera.Active->GetOrientation();
 	dir = Vec3_GetDirVector(rot.x, rot.y);
 	Vec3_Negate(&dir, &dir);
 

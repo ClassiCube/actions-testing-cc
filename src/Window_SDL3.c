@@ -1,5 +1,5 @@
 #include "Core.h"
-#if defined CC_BUILD_SDL3
+#if CC_WIN_BACKEND == CC_WIN_BACKEND_SDL3
 #include "_WindowBase.h"
 #include "Graphics.h"
 #include "String.h"
@@ -24,11 +24,14 @@ static void Window_SDLFail(const char* place) {
 	Logger_Abort(str.buffer);
 }
 
-void Window_Init(void) {
+void Window_PreInit(void) {
 	SDL_Init(SDL_INIT_VIDEO);
 	#ifdef CC_BUILD_FLATPAK
 	SDL_SetHint(SDL_HINT_APP_ID, "net.classicube.flatpak.client");
 	#endif
+}
+
+void Window_Init(void) {
 	int displayID = SDL_GetPrimaryDisplay();
 	Input.Sources = INPUT_SOURCE_NORMAL;
 	
@@ -43,6 +46,19 @@ void Window_Init(void) {
 }
 
 void Window_Free(void) { }
+
+#ifdef CC_BUILD_ICON
+/* See misc/sdl/sdl_icon_gen.cs for how to generate this file */
+#include "../misc/sdl/CCIcon_SDL.h"
+
+static void ApplyIcon(void) {
+	SDL_Surface* surface = SDL_CreateSurfaceFrom(CCIcon_Data, CCIcon_Width, CCIcon_Height, 
+												CCIcon_Pitch, SDL_PIXELFORMAT_BGRA8888);
+	SDL_SetWindowIcon(win_handle, surface);
+}
+#else
+static void ApplyIcon(void) { }
+#endif
 
 static void DoCreateWindow(int width, int height, int flags) {
 	SDL_PropertiesID props = SDL_CreateProperties();
@@ -59,10 +75,16 @@ static void DoCreateWindow(int width, int height, int flags) {
 	RefreshWindowBounds();
 	Window_Main.Exists = true;
 	Window_Main.Handle = win_handle;
+	ApplyIcon();
 	/* TODO grab using SDL_SetWindowGrab? seems to be unnecessary on Linux at least */
 }
+
 void Window_Create2D(int width, int height) { DoCreateWindow(width, height, 0); }
+#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK)
 void Window_Create3D(int width, int height) { DoCreateWindow(width, height, SDL_WINDOW_OPENGL); }
+#else
+void Window_Create3D(int width, int height) { DoCreateWindow(width, height, 0); }
+#endif
 
 void Window_SetTitle(const cc_string* title) {
 	char str[NATIVE_STR_LEN];
@@ -133,7 +155,7 @@ static int MapNativeKey(SDL_Keycode k) {
 		case SDLK_BACKSPACE: return CCKEY_BACKSPACE;
 		case SDLK_TAB:    return CCKEY_TAB;
 		case SDLK_SPACE:  return CCKEY_SPACE;
-		case SDLK_QUOTE:  return CCKEY_QUOTE;
+		case SDLK_APOSTROPHE: return CCKEY_QUOTE;
 		case SDLK_EQUALS: return CCKEY_EQUALS;
 		case SDLK_COMMA:  return CCKEY_COMMA;
 		case SDLK_MINUS:  return CCKEY_MINUS;
@@ -143,7 +165,7 @@ static int MapNativeKey(SDL_Keycode k) {
 		case SDLK_LEFTBRACKET:  return CCKEY_LBRACKET;
 		case SDLK_BACKSLASH:    return CCKEY_BACKSLASH;
 		case SDLK_RIGHTBRACKET: return CCKEY_RBRACKET;
-		case SDLK_BACKQUOTE:    return CCKEY_TILDE;
+		case SDLK_GRAVE:        return CCKEY_TILDE;
 		case SDLK_CAPSLOCK:     return CCKEY_CAPSLOCK;
 		case SDLK_PRINTSCREEN: return CCKEY_PRINTSCREEN;
 		case SDLK_SCROLLLOCK:  return CCKEY_SCROLLLOCK;
@@ -176,6 +198,15 @@ static int MapNativeKey(SDL_Keycode k) {
 		case SDLK_RSHIFT: return CCKEY_RSHIFT;
 		case SDLK_RALT: return CCKEY_RALT;
 		case SDLK_RGUI: return CCKEY_RWIN;
+		
+		case SDLK_AUDIONEXT: return CCKEY_MEDIA_NEXT;
+		case SDLK_AUDIOPREV: return CCKEY_MEDIA_PREV;
+		case SDLK_AUDIOPLAY: return CCKEY_MEDIA_PLAY;
+		case SDLK_AUDIOSTOP: return CCKEY_MEDIA_STOP;
+		
+		case SDLK_AUDIOMUTE:  return CCKEY_VOLUME_MUTE;
+		case SDLK_VOLUMEDOWN: return CCKEY_VOLUME_DOWN;
+		case SDLK_VOLUMEUP:   return CCKEY_VOLUME_UP;
 	}
 	return INPUT_NONE;
 }
@@ -230,7 +261,8 @@ void Window_ProcessEvents(float delta) {
 		case SDL_EVENT_MOUSE_BUTTON_UP:
 			OnMouseEvent(&e); break;
 		case SDL_EVENT_MOUSE_WHEEL:
-			Mouse_ScrollWheel(e.wheel.y);
+			Mouse_ScrollHWheel(e.wheel.x);
+			Mouse_ScrollVWheel(e.wheel.y);
 			break;
 		case SDL_EVENT_MOUSE_MOTION:
 			Pointer_SetPosition(0, e.motion.x, e.motion.y);
@@ -460,7 +492,7 @@ void Window_DisableRawMouse(void) {
 /*########################################################################################################################*
 *-----------------------------------------------------OpenGL context------------------------------------------------------*
 *#########################################################################################################################*/
-#if defined CC_BUILD_GL && !defined CC_BUILD_EGL
+#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK) && !defined CC_BUILD_EGL
 static SDL_GLContext win_ctx;
 
 void GLContext_Create(void) {

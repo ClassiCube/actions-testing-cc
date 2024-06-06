@@ -139,8 +139,8 @@ void Model_SetupState(struct Model* model, struct Entity* e) {
 	Models.Cols[5] = Models.Cols[4];
 	yawDelta = e->Yaw - e->RotY;
 
-	Models.cosHead = (float)Math_Cos(yawDelta * MATH_DEG2RAD);
-	Models.sinHead = (float)Math_Sin(yawDelta * MATH_DEG2RAD);
+	Models.cosHead = Math_CosF(yawDelta * MATH_DEG2RAD);
+	Models.sinHead = Math_SinF(yawDelta * MATH_DEG2RAD);
 	Models.Active  = model;
 }
 
@@ -233,9 +233,9 @@ void Model_DrawRotate(float angleX, float angleY, float angleZ, struct ModelPart
 	struct ModelVertex* src    = &model->vertices[part->offset];
 	struct VertexTextured* dst = &Models.Vertices[model->index];
 
-	float cosX = (float)Math_Cos(-angleX), sinX = (float)Math_Sin(-angleX);
-	float cosY = (float)Math_Cos(-angleY), sinY = (float)Math_Sin(-angleY);
-	float cosZ = (float)Math_Cos(-angleZ), sinZ = (float)Math_Sin(-angleZ);
+	float cosX = Math_CosF(-angleX), sinX = Math_SinF(-angleX);
+	float cosY = Math_CosF(-angleY), sinY = Math_SinF(-angleY);
+	float cosZ = Math_CosF(-angleZ), sinZ = Math_SinF(-angleZ);
 	float t, x = part->rotX, y = part->rotY, z = part->rotZ;
 	
 	struct ModelVertex v;
@@ -516,7 +516,28 @@ static void Models_TextureChanged(void* obj, struct Stream* stream, const cc_str
 /*########################################################################################################################*
 *------------------------------------------------------Custom Models------------------------------------------------------*
 *#########################################################################################################################*/
-struct CustomModel custom_models[MAX_CUSTOM_MODELS];
+#ifdef CC_BUILD_LOWMEM
+static struct CustomModel* custom_models;
+
+struct CustomModel* CustomModel_Get(int id) {
+	if (id >= MAX_CUSTOM_MODELS) return NULL;
+
+	/* TODO log message if allocation fails? */
+	if (!custom_models)
+		custom_models = Mem_TryAlloc(MAX_CUSTOM_MODELS, sizeof(struct CustomModel));
+
+	if (!custom_models) return NULL;
+	return &custom_models[id];
+}
+#else
+static struct CustomModel custom_models[MAX_CUSTOM_MODELS];
+
+struct CustomModel* CustomModel_Get(int id) {
+	if (id >= MAX_CUSTOM_MODELS) return NULL;
+
+	return &custom_models[id];
+}
+#endif
 
 void CustomModel_BuildPart(struct CustomModel* cm, struct CustomModelPartDef* part) {
 	float x1 = part->min.x, y1 = part->min.y, z1 = part->min.z;
@@ -818,6 +839,7 @@ static void CustomModel_DrawArm(struct Entity* e) {
 	struct CustomModel* cm = (struct CustomModel*)Models.Active;
 	int i;
 	if (!cm->numArmParts) return;
+	Gfx_SetAlphaTest(true);
 
 	Models.uScale = 1.0f / cm->uScale;
 	Models.vScale = 1.0f / cm->vScale;
@@ -880,6 +902,8 @@ void CustomModel_Undefine(struct CustomModel* cm) {
 
 static void CustomModel_FreeAll(void) {
 	int i;
+	if (!custom_models) return;
+
 	for (i = 0; i < MAX_CUSTOM_MODELS; i++) 
 	{
 		CustomModel_Undefine(&custom_models[i]);
@@ -952,6 +976,7 @@ static void HumanModel_DrawCore(struct Entity* e, struct ModelSet* model, cc_boo
 static void HumanModel_DrawArmCore(struct Entity* e, struct ModelSet* model) {
 	struct ModelLimbs* set;
 	int type, num;
+	Gfx_SetAlphaTest(true);
 
 	type = Models.skinType;
 	set  = &model->limbs[type & 0x3];
@@ -1854,6 +1879,7 @@ static void SkeletonModel_Draw(struct Entity* e) {
 }
 
 static void SkeletonModel_DrawArm(struct Entity* e) {
+	Gfx_SetAlphaTest(true);
 	Model_LockVB(e, MODEL_BOX_VERTICES);
 
 	Model_DrawArmPart(&skeleton_rightArm);
@@ -1935,9 +1961,9 @@ static void SpiderModel_Draw(struct Entity* e) {
 	Model_DrawPart(&spider_link);
 	Model_DrawPart(&spider_end);
 
-	rotX = (float)Math_Sin(e->Anim.WalkTime)     * e->Anim.Swing * MATH_PI;
-	rotZ = (float)Math_Cos(e->Anim.WalkTime * 2) * e->Anim.Swing * MATH_PI / 16.0f;
-	rotY = (float)Math_Sin(e->Anim.WalkTime * 2) * e->Anim.Swing * MATH_PI / 32.0f;
+	rotX = Math_SinF(e->Anim.WalkTime)     * e->Anim.Swing * MATH_PI;
+	rotZ = Math_CosF(e->Anim.WalkTime * 2) * e->Anim.Swing * MATH_PI / 16.0f;
+	rotY = Math_SinF(e->Anim.WalkTime * 2) * e->Anim.Swing * MATH_PI / 32.0f;
 	Models.Rotation = ROTATE_ORDER_XZY;
 
 	Model_DrawRotate(rotX,  quarterPi  + rotY, eighthPi + rotZ, &spider_leftLeg,  false);
@@ -2190,8 +2216,8 @@ static void BlockModel_Draw(struct Entity* e) {
 	bModel_index = 0;
 	if (Blocks.Draw[bModel_block] == DRAW_GAS) return;
 
-	if (Blocks.FullBright[bModel_block]) {
-		for (i = 0; i < FACE_COUNT; i++) 
+	if (Blocks.Brightness[bModel_block]) {
+		for (i = 0; i < FACE_COUNT; i++)
 		{
 			Models.Cols[i] = PACKEDCOL_WHITE;
 		}
@@ -2309,12 +2335,11 @@ static void DrawBlockTransform(struct Entity* e, float dispX, float dispY, float
 }
 
 static void HoldModel_Draw(struct Entity* e) {
-	static float handBob;
-	static float handIdle;
-
+	float handBob;
+	float handIdle;
 	RecalcProperties(e);
 
-	handBob = (float)Math_Sin(e->Anim.WalkTime * 2.0f) * e->Anim.Swing * MATH_PI / 16.0f;
+	handBob  = Math_SinF(e->Anim.WalkTime * 2.0f) * e->Anim.Swing * MATH_PI / 16.0f;
 	handIdle = e->Anim.RightArmX * (1.0f - e->Anim.Swing);
 
 	e->Anim.RightArmX = 0.5f + handBob + handIdle;

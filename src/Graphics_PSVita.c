@@ -8,7 +8,6 @@
 
 // TODO track last frame used on
 static cc_bool gfx_depthOnly;
-static cc_bool gfx_alphaTesting, gfx_alphaBlending;
 static int frontBufferIndex, backBufferIndex;
 // Inspired from
 // https://github.com/xerpi/gxmfun/blob/master/source/main.c
@@ -242,11 +241,11 @@ static void FP_SwitchActive(void) {
 	// [normal rendering, blend rendering, no rendering]
 	if (gfx_depthOnly) {
 		index += 2;
-	} else if (gfx_alphaBlending) {
+	} else if (gfx_alphaBlend) {
 		index += 1;
 	}
 	
-	if (gfx_alphaTesting) index += 2 * 3;
+	if (gfx_alphaTest) index += 2 * 3;
 	
 	FragmentProgram* FP = &FP_list[index];
 	if (FP == FP_Active) return;
@@ -964,13 +963,11 @@ void Gfx_SetFogMode(FogFunc func) {
  // TODO
 }
 
-void Gfx_SetAlphaTest(cc_bool enabled) {
-	gfx_alphaTesting = enabled;
+static void SetAlphaTest(cc_bool enabled) {
 	FP_SwitchActive();
 }
  
-void Gfx_SetAlphaBlending(cc_bool enabled) {
-	gfx_alphaBlending = enabled;
+static void SetAlphaBlend(cc_bool enabled) {
 	FP_SwitchActive();
 }
 
@@ -996,32 +993,16 @@ static void SetColorWrite(cc_bool r, cc_bool g, cc_bool b, cc_bool a) {
  // TODO
 }
 
-static cc_bool depth_write = true, depth_test = true;
-static void UpdateDepthWrite(void) {
-	// match Desktop behaviour, where disabling depth testing also disables depth writing
-	// TODO do we actually need to & here?
-	cc_bool enabled = depth_write & depth_test;
-	
+void Gfx_SetDepthWrite(cc_bool enabled) {
 	int mode = enabled ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;
 	sceGxmSetFrontDepthWriteEnable(gxm_context, mode);
 	sceGxmSetBackDepthWriteEnable(gxm_context,  mode);
 }
 
-static void UpdateDepthFunction(void) {
-	int func = depth_test ? SCE_GXM_DEPTH_FUNC_LESS_EQUAL : SCE_GXM_DEPTH_FUNC_ALWAYS;
+void Gfx_SetDepthTest(cc_bool enabled) {
+	int func = enabled ? SCE_GXM_DEPTH_FUNC_LESS_EQUAL : SCE_GXM_DEPTH_FUNC_ALWAYS;
 	sceGxmSetFrontDepthFunc(gxm_context, func);
 	sceGxmSetBackDepthFunc(gxm_context,  func);
-}
-
-void Gfx_SetDepthWrite(cc_bool enabled) {
-	depth_write = enabled;
-	UpdateDepthWrite();
-}
-
-void Gfx_SetDepthTest(cc_bool enabled) {
-	depth_test = enabled;
-	UpdateDepthWrite();
-	UpdateDepthFunction();
 }
 
 
@@ -1119,8 +1100,7 @@ void Gfx_ClearBuffers(GfxBuffers buffers) {
 	clear_vertices[3] = (struct VertexColoured){-1.0f,  1.0f, 1.0f, clear_color };
 	
 	Gfx_SetAlphaTest(false);
-	// can't use Gfx_SetDepthTest because that also affects depth writing
-	depth_test = false; UpdateDepthFunction();
+	Gfx_SetDepthTest(false);
 	
 	Gfx_SetVertexFormat(VERTEX_FORMAT_COLOURED);
 	Gfx_LoadIdentityMatrix(MATRIX_VIEW);
@@ -1128,6 +1108,6 @@ void Gfx_ClearBuffers(GfxBuffers buffers) {
 	Gfx_BindVb(clearVB);
 	Gfx_DrawVb_IndexedTris(4);
 	
-	depth_test = true; UpdateDepthFunction();
+	Gfx_SetDepthTest(true);
 }
 #endif

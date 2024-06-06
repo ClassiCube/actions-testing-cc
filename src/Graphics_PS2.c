@@ -243,8 +243,6 @@ void Gfx_DisableMipmaps(void) { }
 *------------------------------------------------------State management---------------------------------------------------*
 *#########################################################################################################################*/
 static int clearR, clearG, clearB;
-static cc_bool gfx_alphaBlend;
-static cc_bool gfx_alphaTest;
 static cc_bool gfx_depthTest;
 static cc_bool stateDirty;
 
@@ -274,13 +272,11 @@ void Gfx_SetFaceCulling(cc_bool enabled) {
 	// TODO
 }
 
-void Gfx_SetAlphaTest(cc_bool enabled) {
-	gfx_alphaTest = enabled;
-	stateDirty    = true;
+static void SetAlphaTest(cc_bool enabled) {
+	stateDirty = true;
 }
 
-void Gfx_SetAlphaBlending(cc_bool enabled) {
-	gfx_alphaBlend = enabled;
+static void SetAlphaBlend(cc_bool enabled) {
 	// TODO update primitive state
 }
 
@@ -486,10 +482,10 @@ static Vector4 TransformVertex(struct VertexTextured* pos) {
 }
 
 //#define VCopy(dst, src) dst.x = vp_hwidth  * (1 + src.x / src.w); dst.y = vp_hheight * (1 - src.y / src.w); dst.z = src.z / src.w; dst.w = src.w;
-static xyz_t FinishVertex(struct Vector4 src) {
-	float x = (vp_hwidth/2048)  * (src.x / src.w);
-	float y = (vp_hheight/2048) * (src.y / src.w);
-	float z = src.z / src.w;
+static xyz_t FinishVertex(struct Vector4 src, float invW) {
+	float x = (vp_hwidth /2048) * (src.x * invW);
+	float y = (vp_hheight/2048) * (src.y * invW);
+	float z = src.z * invW;
 	
 	int originX = ftoi4(2048);
 	int originY = ftoi4(2048);
@@ -522,7 +518,7 @@ static void DrawTriangle(Vector4 v0, Vector4 v1, Vector4 v2, struct VertexTextur
 	for (int i = 0; i < 3; i++)
 	{
 		float Q   = 1.0f / verts[i].w;
-		xyz_t xyz = FinishVertex(verts[i]);
+		xyz_t xyz = FinishVertex(verts[i], Q);
 		color_t color;
 		texel_t texel;
 		
@@ -547,7 +543,7 @@ static void DrawTriangle(Vector4 v0, Vector4 v1, Vector4 v2, struct VertexTextur
 		*dw++ = xyz.xyz;
 	}
 	dw++; // one more to even out number of doublewords
-	q = dw;
+	q = (qword_t*)dw;
 }
 
 static void DrawTriangles(int verticesCount, int startVertex) {

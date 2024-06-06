@@ -1,4 +1,6 @@
+// Silence deprecation warnings on modern iOS
 #define GLES_SILENCE_DEPRECATION
+
 #include "_WindowBase.h"
 #include "Bitmap.h"
 #include "Input.h"
@@ -17,8 +19,6 @@
 #include <sys/stat.h>
 #include <UIKit/UIKit.h>
 #include <UIKit/UIPasteboard.h>
-#include <OpenGLES/ES2/gl.h>
-#include <OpenGLES/ES2/glext.h>
 #include <CoreText/CoreText.h>
 
 #ifdef TARGET_OS_TV
@@ -76,7 +76,7 @@ static UIInterfaceOrientationMask SupportedOrientations(void) {
 
 static cc_bool fullscreen = true;
 static void UpdateStatusBar(void) {
-    if (@available(iOS 10.7, *)) {
+    if ([cc_controller respondsToSelector:@selector(setNeedsStatusBarAppearanceUpdate)]) {
         // setNeedsStatusBarAppearanceUpdate - iOS 7.0
         [cc_controller setNeedsStatusBarAppearanceUpdate];
     } else {
@@ -436,6 +436,7 @@ void Window_SetTitle(const cc_string* title) {
     // TODO: Implement this somehow
 }
 
+void Window_PreInit(void) { }
 void Window_Init(void) {
     //Window_Main.SoftKeyboard = SOFT_KEYBOARD_RESIZE;
     // keyboard now shifts up
@@ -509,16 +510,16 @@ void ShowDialogCore(const char* title, const char* msg) {
     NSString* _msg   = [NSString stringWithCString:msg encoding:NSASCIIStringEncoding];
     alert_completed  = false;
     
-    if (@available(iOS 10.8, *)) {
-        UIAlertController* alert = [UIAlertController alertControllerWithTitle:_title message:_msg preferredStyle:UIAlertControllerStyleAlert];
-        UIAlertAction* okBtn     = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction* act) { alert_completed = true; }];
-        [alert addAction:okBtn];
-        [cc_controller presentViewController:alert animated:YES completion: Nil];
-    } else {
-        UIAlertView* alert = [UIAlertView alloc];
-        alert = [alert initWithTitle:_title message:_msg delegate:cc_controller cancelButtonTitle:@"OK" otherButtonTitles:nil];
-        [alert show];
-    }
+#ifdef TARGET_OS_TV
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:_title message:_msg preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertAction* okBtn     = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction* act) { alert_completed = true; }];
+    [alert addAction:okBtn];
+    [cc_controller presentViewController:alert animated:YES completion: Nil];
+#else
+    UIAlertView* alert = [UIAlertView alloc];
+    alert = [alert initWithTitle:_title message:_msg delegate:cc_controller cancelButtonTitle:@"OK" otherButtonTitles:nil];
+    [alert show];
+#endif
     
     // TODO clicking outside message box crashes launcher
     // loop until alert is closed TODO avoid sleeping
@@ -651,18 +652,15 @@ cc_result Window_OpenFileDialog(const struct OpenFileDialogArgs* args) {
         if (utType) [types addObject:utType];
     }
     
-    if (@available(iOS 10.8, *)) {
-        UIDocumentPickerViewController* dlg;
-        dlg = [UIDocumentPickerViewController alloc];
-        dlg = [dlg initWithDocumentTypes:types inMode:UIDocumentPickerModeOpen];
-        //dlg = [dlg initWithDocumentTypes:types inMode:UIDocumentPickerModeImport];
-        
-        open_dlg_callback = args->Callback;
-        dlg.delegate = cc_controller;
-        [cc_controller presentViewController:dlg animated:YES completion: Nil];
-        return 0; // TODO still unfinished
-    }
-    return ERR_NOT_SUPPORTED;
+    UIDocumentPickerViewController* dlg;
+    dlg = [UIDocumentPickerViewController alloc];
+    dlg = [dlg initWithDocumentTypes:types inMode:UIDocumentPickerModeOpen];
+    //dlg = [dlg initWithDocumentTypes:types inMode:UIDocumentPickerModeImport];
+    
+    open_dlg_callback = args->Callback;
+    dlg.delegate = cc_controller;
+    [cc_controller presentViewController:dlg animated:YES completion: Nil];
+    return 0; // TODO still unfinished
 }
 
 cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
@@ -680,22 +678,23 @@ cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
     NSString* str = ToNSString(&save_path);
     NSURL* url    = [NSURL fileURLWithPath:str isDirectory:NO];
     
-    if (@available(iOS 10.8, *)) {
-        UIDocumentPickerViewController* dlg;
-        dlg = [UIDocumentPickerViewController alloc];
-        dlg = [dlg initWithURL:url inMode:UIDocumentPickerModeExportToService];
-        
-        dlg.delegate = cc_controller;
-        [cc_controller presentViewController:dlg animated:YES completion: Nil];
-        return 0; // TODO still unfinished
-    }
-    return ERR_NOT_SUPPORTED;
+    UIDocumentPickerViewController* dlg;
+    dlg = [UIDocumentPickerViewController alloc];
+    dlg = [dlg initWithURL:url inMode:UIDocumentPickerModeExportToService];
+    
+    dlg.delegate = cc_controller;
+    [cc_controller presentViewController:dlg animated:YES completion: Nil];
+    return 0;
 }
 
 
 /*#########################################################################################################################*
- *--------------------------------------------------------2D window--------------------------------------------------------*
+ *-----------------------------------------------------Window creation-----------------------------------------------------*
  *#########################################################################################################################*/
+@interface CC3DView : UIView
+@end
+static void Init3DLayer(void);
+
 void Window_Create2D(int width, int height) {
     launcherMode  = true;
     CGRect bounds = DoCreateWindow();
@@ -705,49 +704,25 @@ void Window_Create2D(int width, int height) {
     cc_controller.view = view_handle;
 }
 
-
-/*#########################################################################################################################*
- *--------------------------------------------------------3D window--------------------------------------------------------*
- *#########################################################################################################################*/
-static void GLContext_OnLayout(void);
-
-@interface CCGLView : UIView
-@end
-
-@implementation CCGLView
-
-+ (Class)layerClass {
-    return [CAEAGLLayer class];
-}
-
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    GLContext_OnLayout();
-}
-@end
-
 void Window_Create3D(int width, int height) {
     launcherMode  = false;
     CGRect bounds = DoCreateWindow();
     
-    // CAEAGLLayer - iOS 2.0
-    view_handle   = [[CCGLView alloc] initWithFrame:bounds];
+    view_handle = [[CC3DView alloc] initWithFrame:bounds];
     view_handle.multipleTouchEnabled = true;
     cc_controller.view = view_handle;
-    
-    CAEAGLLayer* layer = (CAEAGLLayer*)view_handle.layer;
-    layer.opaque = YES;
-    layer.drawableProperties =
-   @{
-        kEAGLDrawablePropertyRetainedBacking : [NSNumber numberWithBool:NO],
-        kEAGLDrawablePropertyColorFormat : kEAGLColorFormatRGBA8
-    };
+
+    Init3DLayer();
 }
 
 
 /*########################################################################################################################*
 *--------------------------------------------------------GLContext--------------------------------------------------------*
 *#########################################################################################################################*/
+#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK)
+#include <OpenGLES/ES2/gl.h>
+#include <OpenGLES/ES2/glext.h>
+
 static EAGLContext* ctx_handle;
 static GLuint framebuffer;
 static GLuint color_renderbuffer, depth_renderbuffer;
@@ -841,14 +816,40 @@ cc_bool GLContext_SwapBuffers(void) {
 }
 void GLContext_SetFpsLimit(cc_bool vsync, float minFrameMs) { }
 void GLContext_GetApiInfo(cc_string* info) { }
-const struct UpdaterInfo Updater_Info = { "&eCompile latest source code to update", 0 };
+
+
+@implementation CC3DView
+
++ (Class)layerClass {
+    return [CAEAGLLayer class];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    GLContext_OnLayout();
+}
+@end
+
+static void Init3DLayer(void) {
+    // CAEAGLLayer - iOS 2.0
+    CAEAGLLayer* layer = (CAEAGLLayer*)view_handle.layer;
+
+    layer.opaque = YES;
+    layer.drawableProperties =
+   @{
+        kEAGLDrawablePropertyRetainedBacking : [NSNumber numberWithBool:NO],
+        kEAGLDrawablePropertyColorFormat : kEAGLColorFormatRGBA8
+    };
+}
+#endif
 
 
 /*########################################################################################################################*
  *--------------------------------------------------------Updater----------------------------------------------------------*
  *#########################################################################################################################*/
-const char* const Updater_OGL  = NULL;
-const char* const Updater_D3D9 = NULL;
+const struct UpdaterInfo Updater_Info = {
+	"&eRedownload and reinstall to update", 0
+};
 cc_bool Updater_Clean(void) { return true; }
 
 cc_result Updater_GetBuildTime(cc_uint64* t) {
@@ -877,6 +878,7 @@ cc_result Process_StartOpen(const cc_string* args) {
     // openURL - iOS 2.0 (deprecated)
     NSString* str = ToNSString(args);
     NSURL* url    = [[NSURL alloc] initWithString:str];
+
     [UIApplication.sharedApplication openURL:url];
     return 0;
 }

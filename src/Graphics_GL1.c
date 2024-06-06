@@ -1,5 +1,9 @@
+/* Silence deprecation warnings on modern macOS/iOS */
+#define GL_SILENCE_DEPRECATION
+#define GLES_SILENCE_DEPRECATION
+
 #include "Core.h"
-#if defined CC_BUILD_GL && !defined CC_BUILD_GLMODERN
+#if CC_GFX_BACKEND == CC_GFX_BACKEND_GL1
 #include "_GraphicsBase.h"
 #include "Errors.h"
 #include "Window.h"
@@ -9,16 +13,16 @@
 */
 
 #if defined CC_BUILD_WIN
-/* Avoid pointless includes */
-#define WIN32_LEAN_AND_MEAN
-#define NOSERVICE
-#define NOMCX
-#define NOIME
-#include <windows.h>
-#define GLAPI WINGDIAPI
+	/* Avoid pointless includes */
+	#define WIN32_LEAN_AND_MEAN
+	#define NOSERVICE
+	#define NOMCX
+	#define NOIME
+	#include <windows.h>
+	#define GLAPI WINGDIAPI
 #else
-#define GLAPI extern
-#define APIENTRY
+	#define GLAPI extern
+	#define APIENTRY
 #endif
 /* === BEGIN OPENGL HEADERS === */
 typedef unsigned int GLenum;
@@ -47,6 +51,7 @@ typedef cc_uintptr GLpointer;
 
 #define GL_LINES                 0x0001
 #define GL_TRIANGLES             0x0004
+#define GL_QUADS                 0x0007
 
 #define GL_BLEND                 0x0BE2
 #define GL_SRC_ALPHA             0x0302
@@ -104,49 +109,9 @@ typedef cc_uintptr GLpointer;
 #define GL_STATIC_DRAW           0x88E4
 #define GL_DYNAMIC_DRAW          0x88E8
 
-GLAPI void APIENTRY glAlphaFunc(GLenum func, GLfloat ref);
-GLAPI void APIENTRY glBindTexture(GLenum target, GLuint texture);
-GLAPI void APIENTRY glBlendFunc(GLenum sfactor, GLenum dfactor);
-GLAPI void APIENTRY glCallList(GLuint list);
-GLAPI void APIENTRY glClear(GLuint mask);
-GLAPI void APIENTRY glClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
-GLAPI void APIENTRY glColorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha);
-GLAPI void APIENTRY glColorPointer(GLint size, GLenum type, GLsizei stride, GLpointer pointer);
-GLAPI void APIENTRY glDeleteLists(GLuint list, GLsizei range);
-GLAPI void APIENTRY glDeleteTextures(GLsizei n, const GLuint* textures);
-GLAPI void APIENTRY glDepthFunc(GLenum func);
-GLAPI void APIENTRY glDepthMask(GLboolean flag);
-GLAPI void APIENTRY glDisable(GLenum cap);
-GLAPI void APIENTRY glDisableClientState(GLenum array);
-GLAPI void APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count);
-GLAPI void APIENTRY glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices);
-GLAPI void APIENTRY glEnable(GLenum cap);
-GLAPI void APIENTRY glEnableClientState(GLenum array);
-GLAPI void APIENTRY glEndList(void);
-GLAPI void APIENTRY glFogf(GLenum pname, GLfloat param);
-GLAPI void APIENTRY glFogfv(GLenum pname, const GLfloat* params);
-GLAPI void APIENTRY glFogi(GLenum pname, GLint param);
-GLAPI void APIENTRY glFogiv(GLenum pname, const GLint* params);
-GLAPI GLuint APIENTRY glGenLists(GLsizei range);
-GLAPI void APIENTRY   glGenTextures(GLsizei n, GLuint* textures);
-GLAPI GLenum APIENTRY glGetError(void);
-GLAPI void APIENTRY glGetFloatv(GLenum pname, GLfloat* params);
-GLAPI void APIENTRY glGetIntegerv(GLenum pname, GLint* params);
-GLAPI const GLubyte* APIENTRY glGetString(GLenum name);
-GLAPI void APIENTRY glHint(GLenum target, GLenum mode);
-GLAPI void APIENTRY glLoadIdentity(void);
-GLAPI void APIENTRY glLoadMatrixf(const GLfloat* m);
-GLAPI void APIENTRY glMatrixMode(GLenum mode);
-GLAPI void APIENTRY glNewList(GLuint list, GLenum mode);
-GLAPI void APIENTRY glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid* pixels);
-GLAPI void APIENTRY glTexCoordPointer(GLint size, GLenum type, GLsizei stride, GLpointer pointer);
-GLAPI void APIENTRY glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid* pixels);
-GLAPI void APIENTRY glTexParameteri(GLenum target, GLenum pname, GLint param);
-GLAPI void APIENTRY glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid* pixels);
-GLAPI void APIENTRY glVertexPointer(GLint size, GLenum type, GLsizei stride, GLpointer pointer);
-GLAPI void APIENTRY glViewport(GLint x, GLint y, GLsizei width, GLsizei height);
+#define GL_FUNC(_retType, name) GLAPI _retType APIENTRY name
+#include "_GL1Funcs.h"
 /* === END OPENGL HEADERS === */
-
 
 #if defined CC_BUILD_GL11
 static GLuint activeList;
@@ -161,12 +126,15 @@ static void (APIENTRY *_glGenBuffers)(GLsizei n, GLuint *buffers);
 static void (APIENTRY *_glBufferData)(GLenum target, cc_uintptr size, const GLvoid* data, GLenum usage);
 static void (APIENTRY *_glBufferSubData)(GLenum target, cc_uintptr offset, cc_uintptr size, const GLvoid* data);
 #endif
-#include "_GLShared.h"
 
-typedef void (*GL_SetupVBFunc)(void);
-typedef void (*GL_SetupVBRangeFunc)(int startVertex);
-static GL_SetupVBFunc gfx_setupVBFunc;
-static GL_SetupVBRangeFunc gfx_setupVBRangeFunc;
+static void GLContext_GetAll(const struct DynamicLibSym* syms, int count) {
+	int i;
+	for (i = 0; i < count; i++) 
+	{
+		*syms[i].symAddr = GLContext_GetAddress(syms[i].name);
+	}
+}
+
 
 #if defined CC_BUILD_WIN && !defined CC_BUILD_GL11
 /* Note the following about calling OpenGL functions on Windows */
@@ -179,50 +147,72 @@ static GL_SetupVBRangeFunc gfx_setupVBRangeFunc;
 /*    call [glDrawElements]  --> opengl32.dll thunk--> GL driver thunk --> GL driver implementation */
 /*    call [_glDrawElements] --> GL driver thunk --> GL driver implementation */
 
-static void (APIENTRY *_glColorPointer)(GLint size,    GLenum type, GLsizei stride, GLpointer pointer);
-static void (APIENTRY *_glDrawElements)(GLenum mode, GLsizei count,    GLenum type, const GLvoid* indices);
-static void (APIENTRY *_glTexCoordPointer)(GLint size, GLenum type, GLsizei stride, GLpointer pointer);
-static void (APIENTRY *_glVertexPointer)(GLint size,   GLenum type, GLsizei stride, GLpointer pointer);
+#undef GL_FUNC
+#define GL_FUNC(_retType, name) typedef _retType (APIENTRY *FP_ ## name)
+#include "_GL1Funcs.h"
+
+static FP_glColorPointer    _glColorPointer;
+static FP_glTexCoordPointer _glTexCoordPointer;
+static FP_glVertexPointer   _glVertexPointer;
+
+static FP_glDrawArrays   _glDrawArrays;
+static FP_glDrawElements _glDrawElements;
+
+static FP_glBindTexture    _glBindTexture;
+static FP_glDeleteTextures _glDeleteTextures;
+static FP_glGenTextures    _glGenTextures;
+static FP_glTexImage2D     _glTexImage2D;
+static FP_glTexSubImage2D  _glTexSubImage2D;
 
 static const struct DynamicLibSym coreFuncs[] = {
 	DynamicLib_Sym2("glColorPointer",    glColorPointer),
-	DynamicLib_Sym2("glTexCoordPointer", glTexCoordPointer), DynamicLib_Sym2("glDrawElements", glDrawElements),
-	DynamicLib_Sym2("glVertexPointer",  glVertexPointer)
+	DynamicLib_Sym2("glTexCoordPointer", glTexCoordPointer),
+	DynamicLib_Sym2("glVertexPointer",   glVertexPointer),
+
+	DynamicLib_Sym2("glDrawArrays",   glDrawArrays),
+	DynamicLib_Sym2("glDrawElements", glDrawElements),
+
+	DynamicLib_Sym2("glBindTexture",    glBindTexture),
+	DynamicLib_Sym2("glDeleteTextures", glDeleteTextures),
+	DynamicLib_Sym2("glGenTextures",    glGenTextures),
+	DynamicLib_Sym2("glTexImage2D",     glTexImage2D),
+	DynamicLib_Sym2("glTexSubImage2D",  glTexSubImage2D),
 };
+
 static void LoadCoreFuncs(void) {
 	GLContext_GetAll(coreFuncs, Array_Elems(coreFuncs));
 }
 #else
 #define _glColorPointer    glColorPointer
-#define _glDrawElements    glDrawElements
 #define _glTexCoordPointer glTexCoordPointer
 #define _glVertexPointer   glVertexPointer
+
+#define _glDrawArrays      glDrawArrays
+#define _glDrawElements    glDrawElements
+
+#define _glBindTexture    glBindTexture
+#define _glDeleteTextures glDeleteTextures
+#define _glGenTextures    glGenTextures
+#define _glTexImage2D     glTexImage2D
+#define _glTexSubImage2D  glTexSubImage2D
 #endif
 
+typedef void (*GL_SetupVBFunc)(void);
+typedef void (*GL_SetupVBRangeFunc)(int startVertex);
+static GL_SetupVBFunc gfx_setupVBFunc;
+static GL_SetupVBRangeFunc gfx_setupVBRangeFunc;
+#include "_GLShared.h"
 
 /*########################################################################################################################*
 *-------------------------------------------------------Index buffers-----------------------------------------------------*
 *#########################################################################################################################*/
 #ifndef CC_BUILD_GL11
-static GfxResourceID GL_GenBuffer(void) {
-	GLuint id;
-	_glGenBuffers(1, &id);
-	return id;
-}
-
-static void GL_DelBuffer(GfxResourceID id) {
-	GLuint gl_id = (GLuint)id;
-	_glDeleteBuffers(1, &gl_id);
-}
-
-static GfxResourceID (*_genBuffer)(void)    = GL_GenBuffer;
-static void (*_delBuffer)(GfxResourceID id) = GL_DelBuffer;
-
 GfxResourceID Gfx_CreateIb2(int count, Gfx_FillIBFunc fillFunc, void* obj) {
 	cc_uint16 indices[GFX_MAX_INDICES];
-	GfxResourceID id = _genBuffer();
+	GfxResourceID id = NULL;
 	cc_uint32 size   = count * sizeof(cc_uint16);
 
+	_glGenBuffers(1, (GLuint*)&id);
 	fillFunc(indices, count, obj);
 	_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, id);
 	_glBufferData(GL_ELEMENT_ARRAY_BUFFER, size, indices, GL_STATIC_DRAW);
@@ -234,7 +224,8 @@ void Gfx_BindIb(GfxResourceID ib) { _glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib); 
 void Gfx_DeleteIb(GfxResourceID* ib) {
 	GfxResourceID id = *ib;
 	if (!id) return;
-	_delBuffer(id);
+
+	_glDeleteBuffers(1, (GLuint*)&id);
 	*ib = 0;
 }
 #else
@@ -249,7 +240,8 @@ void Gfx_DeleteIb(GfxResourceID* ib) { }
 *#########################################################################################################################*/
 #ifndef CC_BUILD_GL11
 static GfxResourceID Gfx_AllocStaticVb(VertexFormat fmt, int count) {
-	GfxResourceID id = _genBuffer();
+	GfxResourceID id = NULL;
+	_glGenBuffers(1, (GLuint*)&id);
 	_glBindBuffer(GL_ARRAY_BUFFER, id);
 	return id;
 }
@@ -260,7 +252,7 @@ void Gfx_BindVb(GfxResourceID vb) {
 
 void Gfx_DeleteVb(GfxResourceID* vb) {
 	GfxResourceID id = *vb;
-	if (id) _delBuffer(id);
+	if (id) _glDeleteBuffers(1, (GLuint*)&id);
 	*vb = 0;
 }
 
@@ -275,10 +267,10 @@ void Gfx_UnlockVb(GfxResourceID vb) {
 static GfxResourceID Gfx_AllocStaticVb(VertexFormat fmt, int count) { 
 	return glGenLists(1); 
 }
-void Gfx_BindVb(GfxResourceID vb) { activeList = (GLuint)vb; }
+void Gfx_BindVb(GfxResourceID vb) { activeList = ptr_to_uint(vb); }
 
 void Gfx_DeleteVb(GfxResourceID* vb) {
-	GLuint id = (GLuint)(*vb);
+	GLuint id = ptr_to_uint(*vb);
 	if (id) glDeleteLists(id, 1);
 	*vb = 0;
 }
@@ -326,9 +318,10 @@ GfxResourceID Gfx_CreateVb2(void* vertices, VertexFormat fmt, int count) {
 *#########################################################################################################################*/
 #ifndef CC_BUILD_GL11
 static GfxResourceID Gfx_AllocDynamicVb(VertexFormat fmt, int maxVertices) {
-	GfxResourceID id = _genBuffer();
+	GfxResourceID id = NULL;
 	cc_uint32 size   = maxVertices * strideSizes[fmt];
 
+	_glGenBuffers(1, (GLuint*)&id);
 	_glBindBuffer(GL_ARRAY_BUFFER, id);
 	_glBufferData(GL_ARRAY_BUFFER, size, NULL, GL_DYNAMIC_DRAW);
 	return id;
@@ -340,7 +333,7 @@ void Gfx_BindDynamicVb(GfxResourceID vb) {
 
 void Gfx_DeleteDynamicVb(GfxResourceID* vb) {
 	GfxResourceID id = *vb;
-	if (id) _delBuffer(id);
+	if (id) _glDeleteBuffers(1, (GLuint*)&id);
 	*vb = 0;
 }
 
@@ -365,21 +358,21 @@ static GfxResourceID Gfx_AllocDynamicVb(VertexFormat fmt, int maxVertices) {
 
 void Gfx_BindDynamicVb(GfxResourceID vb) {
 	activeList      = gl_DYNAMICLISTID;
-	dynamicListData = (void*)vb;
+	dynamicListData = vb;
 }
 
 void Gfx_DeleteDynamicVb(GfxResourceID* vb) {
-	void* addr = (void*)(*vb);
+	void* addr = *vb;
 	if (addr) Mem_Free(addr);
 	*vb = 0;
 }
 
-void* Gfx_LockDynamicVb(GfxResourceID vb, VertexFormat fmt, int count) { return (void*)vb; }
+void* Gfx_LockDynamicVb(GfxResourceID vb, VertexFormat fmt, int count) { return vb; }
 void  Gfx_UnlockDynamicVb(GfxResourceID vb) { Gfx_BindDynamicVb(vb); }
 
 void Gfx_SetDynamicVbData(GfxResourceID vb, void* vertices, int vCount) {
 	Gfx_BindDynamicVb(vb);
-	Mem_Copy((void*)vb, vertices, vCount * gfx_stride);
+	Mem_Copy(vb, vertices, vCount * gfx_stride);
 }
 #endif
 
@@ -443,7 +436,7 @@ void Gfx_SetVertexFormat(VertexFormat fmt) {
 
 void Gfx_DrawVb_Lines(int verticesCount) {
 	gfx_setupVBFunc();
-	glDrawArrays(GL_LINES, 0, verticesCount);
+	_glDrawArrays(GL_LINES, 0, verticesCount);
 }
 
 void Gfx_DrawVb_IndexedTris_Range(int verticesCount, int startVertex) {
@@ -479,7 +472,7 @@ void Gfx_DrawIndexedTris_T2fC4b(int verticesCount, int startVertex) {
 *---------------------------------------------------------Textures--------------------------------------------------------*
 *#########################################################################################################################*/
 void Gfx_BindTexture(GfxResourceID texId) {
-	glBindTexture(GL_TEXTURE_2D, (GLuint)texId);
+	_glBindTexture(GL_TEXTURE_2D, ptr_to_uint(texId));
 }
 
 
@@ -534,7 +527,7 @@ void Gfx_SetFogMode(FogFunc func) {
 	gfx_fogMode = func;
 }
 
-void Gfx_SetAlphaTest(cc_bool enabled) { 
+static void SetAlphaTest(cc_bool enabled) {
 	if (enabled) { glEnable(GL_ALPHA_TEST); } else { glDisable(GL_ALPHA_TEST); }
 }
 
@@ -621,71 +614,147 @@ static void GLBackend_Init(void) { MakeIndices(gl_indices, GFX_MAX_INDICES, NULL
 #else
 
 #if defined CC_BUILD_WIN
-/* On 32 bit windows, can replace the gl function drawing with these 1.1 fallbacks  */
-/*  (note that this only works on 32 bit system, as OpenGL IDs are 32 bit integers) */
+static FP_glDrawElements    _realDrawElements;
+static FP_glColorPointer    _realColorPointer;
+static FP_glTexCoordPointer _realTexCoordPointer;
+static FP_glVertexPointer   _realVertexPointer;
 
-/* fake vertex buffer objects with client side pointers */
-typedef struct fake_buffer { cc_uint8* data; } fake_buffer;
-static fake_buffer* cur_ib;
-static fake_buffer* cur_vb;
-#define fake_GetBuffer(target) (target == GL_ELEMENT_ARRAY_BUFFER ? &cur_ib : &cur_vb);
+/* On Windows, can replace the GL function drawing with these 1.1 fallbacks */
+/* fake vertex buffer objects by using client side pointers instead */
+typedef struct legacy_buffer { cc_uint8* data; } legacy_buffer;
+static legacy_buffer* cur_ib;
+static legacy_buffer* cur_vb;
+#define legacy_GetBuffer(target) (target == GL_ELEMENT_ARRAY_BUFFER ? &cur_ib : &cur_vb);
 
-static void APIENTRY fake_bindBuffer(GLenum target, GfxResourceID src) {
-	fake_buffer** buffer = fake_GetBuffer(target);
-	*buffer = (fake_buffer*)src;
+static void APIENTRY legacy_genBuffer(GLsizei n, GLuint* buffer) {
+	GfxResourceID* dst = (GfxResourceID*)buffer;
+	*dst = Mem_TryAllocCleared(1, sizeof(legacy_buffer));
 }
 
-static GfxResourceID GenFakeBuffer(void) {
-	return (GfxResourceID)Mem_TryAllocCleared(1, sizeof(fake_buffer));
+static void APIENTRY legacy_deleteBuffer(GLsizei n, const GLuint* buffer) {
+	GfxResourceID* dst = (GfxResourceID*)buffer;
+	Mem_Free(*dst);
 }
 
-static void DelFakeBuffer(GfxResourceID id) {
-	Mem_Free((void*)id);
+static void APIENTRY legacy_bindBuffer(GLenum target, GfxResourceID src) {
+	legacy_buffer** buffer = legacy_GetBuffer(target);
+	*buffer = (legacy_buffer*)src;
 }
 
-static void APIENTRY fake_bufferData(GLenum target, cc_uintptr size, const GLvoid* data, GLenum usage) {
-	fake_buffer* buffer = *fake_GetBuffer(target);
+static void APIENTRY legacy_bufferData(GLenum target, cc_uintptr size, const GLvoid* data, GLenum usage) {
+	legacy_buffer* buffer = *legacy_GetBuffer(target);
 	Mem_Free(buffer->data);
 
 	buffer->data = Mem_TryAlloc(size, 1);
 	if (data) Mem_Copy(buffer->data, data, size);
 }
-static void APIENTRY fake_bufferSubData(GLenum target, cc_uintptr offset, cc_uintptr size, const GLvoid* data) {
-	fake_buffer* buffer = *fake_GetBuffer(target);
+
+static void APIENTRY legacy_bufferSubData(GLenum target, cc_uintptr offset, cc_uintptr size, const GLvoid* data) {
+	legacy_buffer* buffer = *legacy_GetBuffer(target);
 	Mem_Copy(buffer->data, data, size);
 }
 
-/* wglGetProcAddress doesn't work with OpenGL 1.1 software rasteriser, so call GL functions directly */
-static void APIENTRY fake_drawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices) {
-	glDrawElements(mode, count, type, (cc_uintptr)indices + cur_ib->data);
+
+static void APIENTRY gl10_bindTexture(GLenum target, GLuint texture) {
+	
 }
-static void APIENTRY fake_colorPointer(GLint size, GLenum type, GLsizei stride, GLpointer offset) {
-	glColorPointer(size,    type, stride, (cc_uintptr)cur_vb->data + offset);
+static void APIENTRY gl10_deleteTexture(GLsizei n, const GLuint* textures) {
+
 }
-static void APIENTRY fake_texCoordPointer(GLint size, GLenum type, GLsizei stride, GLpointer offset) {
-	glTexCoordPointer(size, type, stride, (cc_uintptr)cur_vb->data + offset);
+static void APIENTRY gl10_genTexture(GLsizei n, GLuint* textures) {
+
 }
-static void APIENTRY fake_vertexPointer(GLint size, GLenum type, GLsizei stride, GLpointer offset) {
-	glVertexPointer(size,   type, stride, (cc_uintptr)cur_vb->data + offset);
+static void APIENTRY gl10_texImage(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid* pixels) {
+	
+}
+static void APIENTRY gl10_texSubImage(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid* pixels) {
+	
 }
 
-static void OpenGL11Fallback(void) {
+static cc_uint8* gl10_vb;
+static void APIENTRY gl10_drawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices) {
+	/* TODO */
+	int i;
+	glBegin(GL_QUADS);
+	count = (count * 4) / 6;
+
+	if (gfx_format == VERTEX_FORMAT_TEXTURED) {
+		struct VertexTextured* src = (struct VertexTextured*)gl10_vb;
+		for (i = 0; i < count; i++, src++) 
+		{
+			glColor4ub(PackedCol_R(src->Col), PackedCol_G(src->Col), PackedCol_B(src->Col), PackedCol_A(src->Col));
+			glTexCoord2f(src->U, src->V);
+			glVertex3f(src->x, src->y, src->z);
+		}
+	} else {
+		struct VertexColoured* src = (struct VertexColoured*)gl10_vb;
+		for (i = 0; i < count; i++, src++) 
+		{
+			glColor4ub(PackedCol_R(src->Col), PackedCol_G(src->Col), PackedCol_B(src->Col), PackedCol_A(src->Col));
+			glVertex3f(src->x, src->y, src->z);
+		}
+	}
+
+	glEnd();
+}
+static void APIENTRY gl10_colorPointer(GLint size, GLenum type, GLsizei stride, GLpointer offset) {
+}
+static void APIENTRY gl10_texCoordPointer(GLint size, GLenum type, GLsizei stride, GLpointer offset) {
+}
+static void APIENTRY gl10_vertexPointer(GLint size, GLenum type, GLsizei stride, GLpointer offset) {
+	gl10_vb = cur_vb->data + offset;
+}
+
+
+static void APIENTRY gl11_drawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices) {
+	_realDrawElements(mode, count, type, (cc_uintptr)indices + cur_ib->data);
+}
+static void APIENTRY gl11_colorPointer(GLint size, GLenum type, GLsizei stride, GLpointer offset) {
+	_realColorPointer(size,    type, stride, (cc_uintptr)cur_vb->data + offset);
+}
+static void APIENTRY gl11_texCoordPointer(GLint size, GLenum type, GLsizei stride, GLpointer offset) {
+	_realTexCoordPointer(size, type, stride, (cc_uintptr)cur_vb->data + offset);
+}
+static void APIENTRY gl11_vertexPointer(GLint size, GLenum type, GLsizei stride, GLpointer offset) {
+	_realVertexPointer(size,   type, stride, (cc_uintptr)cur_vb->data + offset);
+}
+
+
+static void FallbackOpenGL(void) {
 	Window_ShowDialog("Performance warning",
 		"Your system only supports only OpenGL 1.1\n" \
 		"This is usually caused by graphics drivers not being installed\n\n" \
 		"As such you will likely experience very poor performance");
 	customMipmapsLevels = false;
 		
-	_glBindBuffer = fake_bindBuffer; _delBuffer    = DelFakeBuffer;
-	_genBuffer    = GenFakeBuffer;   _glBufferData = fake_bufferData;
-	_glBufferSubData = fake_bufferSubData;
+	_glGenBuffers    = legacy_genBuffer;
+	_glDeleteBuffers = legacy_deleteBuffer;
+	_glBindBuffer    = legacy_bindBuffer;
+	_glBufferData    = legacy_bufferData;
+	_glBufferSubData = legacy_bufferSubData;
 
-	_glDrawElements    = fake_drawElements;    _glColorPointer  = fake_colorPointer;
-	_glTexCoordPointer = fake_texCoordPointer; _glVertexPointer = fake_vertexPointer;
+	_realDrawElements    = _glDrawElements;    _realColorPointer  = _glColorPointer;
+	_realTexCoordPointer = _glTexCoordPointer; _realVertexPointer = _glVertexPointer;
+
+	_glDrawElements    = gl11_drawElements;    _glColorPointer  = gl11_colorPointer;
+	_glTexCoordPointer = gl11_texCoordPointer; _glVertexPointer = gl11_vertexPointer;
+
+	/* OpenGL 1.0 fallback support */
+	if (_realDrawElements) return;
+	Window_ShowDialog("Performance warning", "OpenGL 1.0 only support, expect awful performance");
+
+	_glDrawElements    = gl10_drawElements;    _glColorPointer  = gl10_colorPointer;
+	_glTexCoordPointer = gl10_texCoordPointer; _glVertexPointer = gl10_vertexPointer;
+
+	_glBindTexture    = gl10_bindTexture;
+	_glGenTextures    = gl10_genTexture;
+	_glDeleteTextures = gl10_deleteTexture;
+	_glTexImage2D     = gl10_texImage;
+	_glTexSubImage2D  = gl10_texSubImage;
 }
 #else
 /* No point in even trying for other systems */
-static void OpenGL11Fallback(void) {
+static void FallbackOpenGL(void) {
 	Logger_FailToStart("Only OpenGL 1.1 supported.\n\n" \
 		"Compile the game with CC_BUILD_GL11, or ask on the ClassiCube forums for it");
 }
@@ -719,7 +788,7 @@ static void GLBackend_Init(void) {
 	} else if (String_CaselessContains(&extensions, &vboExt)) {
 		GLContext_GetAll(arbVboFuncs,  Array_Elems(arbVboFuncs));
 	} else {
-		OpenGL11Fallback();
+		FallbackOpenGL();
 	}
 }
 #endif

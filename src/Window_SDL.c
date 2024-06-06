@@ -1,5 +1,5 @@
 #include "Core.h"
-#if defined CC_BUILD_SDL2
+#if CC_WIN_BACKEND == CC_WIN_BACKEND_SDL2
 #include "_WindowBase.h"
 #include "Graphics.h"
 #include "String.h"
@@ -52,9 +52,12 @@ static void Window_SDLFail(const char* place) {
 	Logger_Abort(str.buffer);
 }
 
+void Window_PreInit(void) {
+	SDL_Init(SDL_INIT_VIDEO);
+}
+
 void Window_Init(void) {
 	SDL_DisplayMode mode = { 0 };
-	SDL_Init(SDL_INIT_VIDEO);
 	SDL_GetDesktopDisplayMode(0, &mode);
 	Input.Sources = INPUT_SOURCE_NORMAL;
 
@@ -67,6 +70,20 @@ void Window_Init(void) {
 
 void Window_Free(void) { }
 
+
+#ifdef CC_BUILD_ICON
+/* See misc/sdl/sdl_icon_gen.cs for how to generate this file */
+#include "../misc/sdl/CCIcon_SDL.h"
+
+static void ApplyIcon(void) {
+	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(CCIcon_Data, CCIcon_Width, CCIcon_Height, 32, CCIcon_Pitch,
+													0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+	SDL_SetWindowIcon(win_handle, surface);
+}
+#else
+static void ApplyIcon(void) { }
+#endif
+
 static void DoCreateWindow(int width, int height, int flags) {
 	win_handle = SDL_CreateWindow(NULL, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, 
 					flags | SDL_WINDOW_RESIZABLE);
@@ -75,10 +92,12 @@ static void DoCreateWindow(int width, int height, int flags) {
 	RefreshWindowBounds();
 	Window_Main.Exists = true;
 	Window_Main.Handle = win_handle;
+	ApplyIcon();
 	/* TODO grab using SDL_SetWindowGrab? seems to be unnecessary on Linux at least */
 }
+
 void Window_Create2D(int width, int height) { DoCreateWindow(width, height, 0); }
-#if !defined CC_BUILD_SOFTGPU
+#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK)
 void Window_Create3D(int width, int height) { DoCreateWindow(width, height, SDL_WINDOW_OPENGL); }
 #else
 void Window_Create3D(int width, int height) { DoCreateWindow(width, height, 0); }
@@ -189,6 +208,15 @@ static int MapNativeKey(SDL_Keycode k) {
 		case SDLK_RSHIFT: return CCKEY_RSHIFT;
 		case SDLK_RALT: return CCKEY_RALT;
 		case SDLK_RGUI: return CCKEY_RWIN;
+		
+		case SDLK_AUDIONEXT: return CCKEY_MEDIA_NEXT;
+		case SDLK_AUDIOPREV: return CCKEY_MEDIA_PREV;
+		case SDLK_AUDIOPLAY: return CCKEY_MEDIA_PLAY;
+		case SDLK_AUDIOSTOP: return CCKEY_MEDIA_STOP;
+		
+		case SDLK_AUDIOMUTE:  return CCKEY_VOLUME_MUTE;
+		case SDLK_VOLUMEDOWN: return CCKEY_VOLUME_DOWN;
+		case SDLK_VOLUMEUP:   return CCKEY_VOLUME_UP;
 	}
 	return INPUT_NONE;
 }
@@ -270,7 +298,8 @@ void Window_ProcessEvents(float delta) {
 		case SDL_MOUSEBUTTONUP:
 			OnMouseEvent(&e); break;
 		case SDL_MOUSEWHEEL:
-			Mouse_ScrollWheel(e.wheel.y);
+			Mouse_ScrollHWheel(e.wheel.x);
+			Mouse_ScrollVWheel(e.wheel.y);
 			break;
 		case SDL_MOUSEMOTION:
 			Pointer_SetPosition(0, e.motion.x, e.motion.y);
@@ -430,7 +459,7 @@ void Window_DisableRawMouse(void) {
 /*########################################################################################################################*
 *-----------------------------------------------------OpenGL context------------------------------------------------------*
 *#########################################################################################################################*/
-#if defined CC_BUILD_GL && !defined CC_BUILD_EGL
+#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK) && !defined CC_BUILD_EGL
 static SDL_GLContext win_ctx;
 
 void GLContext_Create(void) {

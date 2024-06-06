@@ -94,6 +94,8 @@ CC_VAR extern struct _WindowData WindowInfo; /* Named WindowInfo for backwards c
 /* Data for alternate game window (e.g. 3DS) */
 extern struct _WindowData Window_Alt;
 
+/* Initialises necessary state before initing platform and loading options */
+void Window_PreInit(void);
 /* Initialises state for window, input, and display. */
 void Window_Init(void);
 /* Potentially frees/resets state for window, input, and display. */
@@ -214,7 +216,7 @@ void Window_UpdateRawMouse(void);
 void Window_DisableRawMouse(void);
 
 /* OpenGL contexts are heavily tied to the window, so for simplicitly are also provided here */
-#ifdef CC_BUILD_GL
+#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK)
 #define GLCONTEXT_DEFAULT_DEPTH 24
 /* Creates an OpenGL context, then makes it the active context. */
 /* NOTE: You MUST have created the window beforehand, as the GL context is attached to the window. */

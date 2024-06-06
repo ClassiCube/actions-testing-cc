@@ -283,7 +283,6 @@ static struct ColoursScreen {
 	struct LLabel lblRGB[COLOURS_NUM_COLS];
 	struct LInput iptColours[COLOURS_NUM_ENTRIES];
 	struct LCheckbox cbClassic;
-	float colourAcc;
 } ColoursScreen;
 
 #define COLOURSSCREEN_MAX_WIDGETS 25
@@ -373,14 +372,11 @@ static void ColoursScreen_AdjustSelected(struct LScreen* s, int delta) {
 	ColoursScreen_TextChanged(w);
 }
 
-static void ColoursScreen_MouseWheel(struct LScreen* s_, float delta) {
-	struct ColoursScreen* s = (struct ColoursScreen*)s_;
-	int steps = Utils_AccumulateWheelDelta(&s->colourAcc, delta);
-	ColoursScreen_AdjustSelected(s_, steps);
-}
-
 static void ColoursScreen_KeyDown(struct LScreen* s, int key, cc_bool was) {
 	int delta = Input_CalcDelta(key, 1, 10);
+	if (key == CCWHEEL_UP)   delta = +1;
+	if (key == CCWHEEL_DOWN) delta = -1;
+	
 	if (delta) {
 		ColoursScreen_AdjustSelected(s, delta);
 	} else {
@@ -423,7 +419,6 @@ static void ColoursScreen_Activated(struct LScreen* s_) {
 	struct ColoursScreen* s = (struct ColoursScreen*)s_;
 	ColoursScreen_AddWidgets(s);
 
-	s->colourAcc = 0;
 	LCheckbox_Set(&s->cbClassic, Launcher_Theme.ClassicBackground);
 	ColoursScreen_UpdateAll(s);
 }
@@ -437,7 +432,6 @@ void ColoursScreen_SetActive(void) {
 
 	s->Activated  = ColoursScreen_Activated;
 	s->KeyDown    = ColoursScreen_KeyDown;
-	s->MouseWheel = ColoursScreen_MouseWheel;
 
 	s->title          = "Custom theme";
 	s->onEscapeWidget = (struct LWidget*)&s->btnBack;
@@ -893,16 +887,20 @@ static void MainScreen_Activated(struct LScreen* s_) {
 	s->iptPassword.inputType = KEYBOARD_TYPE_PASSWORD;
 	s->lblUpdate.small       = true;
 
+#ifdef CC_BUILD_NETWORKING
 	LInput_Add(s,  &s->iptUsername, 280, "Username..",  main_iptUsername);
 	LInput_Add(s,  &s->iptPassword, 280, "Password..",  main_iptPassword);
 	LButton_Add(s, &s->btnLogin,    100, 35, "Sign in", 
 				MainScreen_Login,  main_btnLogin);
 	LButton_Add(s, &s->btnResume,   100, 35, "Resume",  
 				MainScreen_Resume, main_btnResume);
+#endif
 
 	LLabel_Add(s,  &s->lblStatus,  "",  main_lblStatus);
+#ifdef CC_BUILD_NETWORKING
 	LButton_Add(s, &s->btnDirect,  200, 35, "Direct connect", 
 				SwitchToDirectConnect,   main_btnDirect);
+#endif
 	LButton_Add(s, &s->btnSPlayer, 200, 35, "Singleplayer",
 				MainScreen_Singleplayer, main_btnSPlayer);
 #ifdef CC_BUILD_SPLITSCREEN
@@ -1049,7 +1047,12 @@ void MainScreen_SetActive(void) {
 	s->LoadState     = MainScreen_Load;
 	s->Tick          = MainScreen_Tick;
 	s->title         = "ClassiCube";
+
+#ifdef CC_BUILD_NETWORKING
 	s->onEnterWidget = (struct LWidget*)&s->btnLogin;
+#else
+	s->onEnterWidget = (struct LWidget*)&s->btnSPlayer;
+#endif
 
 	Launcher_SetScreen((struct LScreen*)s);
 }

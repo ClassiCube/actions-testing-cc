@@ -483,7 +483,7 @@ void Game_SetFpsLimit(int method) {
 }
 
 static void UpdateViewMatrix(void) {
-	Camera.Active->GetView(Entities.CurPlayer, &Gfx.View);
+	Camera.Active->GetView(&Gfx.View);
 	FrustumCulling_CalcFrustumEquations(&Gfx.Projection, &Gfx.View);
 }
 
@@ -607,7 +607,7 @@ static CC_INLINE void Game_DrawFrame(float delta, float t) {
 	UpdateViewMatrix();
 
 	if (!Gui_GetBlocksWorld()) {
-		Camera.Active->GetPickedBlock(Entities.CurPlayer, &Game_SelectedPos); /* TODO: only pick when necessary */
+		Camera.Active->GetPickedBlock(&Game_SelectedPos); /* TODO: only pick when necessary */
 		Camera_KeyLookUpdate(delta);
 		InputHandler_Tick();
 
@@ -640,7 +640,7 @@ static void DrawSplitscreen(float delta, float t, int i, int x, int y, int w, in
 	
 	Entities.CurPlayer = &LocalPlayer_Instances[i];
 	LocalPlayer_SetInterpPosition(Entities.CurPlayer, t);
-	Camera.CurrentPos = Camera.Active->GetPosition(Entities.CurPlayer, t);
+	Camera.CurrentPos = Camera.Active->GetPosition(t);
 	
 	Game_DrawFrame(delta, t);
 }
@@ -675,7 +675,7 @@ static CC_INLINE void Game_RenderFrame(double delta) {
 
 	if (!Window_Main.Focused && !Gui.InputGrab) Gui_ShowPauseMenu();
 
-	if (KeyBind_IsPressed(KEYBIND_ZOOM_SCROLL) && !Gui.InputGrab) {
+	if (InputBind_IsPressed(BIND_ZOOM_SCROLL) && !Gui.InputGrab) {
 		InputHandler_SetFOV(Camera.ZoomFov);
 	}
 
@@ -684,7 +684,7 @@ static CC_INLINE void Game_RenderFrame(double delta) {
 	t = (float)(entTask.accumulator / entTask.interval);
 	LocalPlayer_SetInterpPosition(Entities.CurPlayer, t);
 
-	Camera.CurrentPos = Camera.Active->GetPosition(Entities.CurPlayer, t);
+	Camera.CurrentPos = Camera.Active->GetPosition(t);
 	/* NOTE: EnvRenderer_UpdateFog also also sets clear color */
 	EnvRenderer_UpdateFog();
 	AudioBackend_Tick();

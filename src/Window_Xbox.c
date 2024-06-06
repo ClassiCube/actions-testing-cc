@@ -40,6 +40,7 @@ static void OnDataReceived(UTR_T* utr) {
 }
 
 static void OnDeviceChanged(xid_dev_t *xid_dev__, int status__) {
+    Platform_LogConst("Getting devices");
     xid_dev_t* xid_dev = usbh_xid_get_device_list();
     Platform_LogConst("Devices check");
 	
@@ -57,8 +58,11 @@ static void OnDeviceChanged(xid_dev_t *xid_dev__, int status__) {
     xid_ctrl = NULL;
 }
 
-void Window_Init(void) {
+void Window_PreInit(void) {
 	XVideoSetMode(640, 480, 32, REFRESH_DEFAULT); // TODO not call
+}
+
+void Window_Init(void) {
 	VIDEO_MODE mode = XVideoGetMode();
 	
 	DisplayInfo.Width  = mode.width;
@@ -75,11 +79,13 @@ void Window_Init(void) {
 	DisplayInfo.ContentOffsetX = 10;
 	DisplayInfo.ContentOffsetY = 10;
 
+#ifndef CC_BUILD_CXBX
 	usbh_core_init();
 	usbh_xid_init();
 	
 	usbh_install_xid_conn_callback(OnDeviceChanged, OnDeviceChanged);
 	OnDeviceChanged(NULL, 0); // TODO useless call?
+#endif
 }
 
 void Window_Free(void) { usbh_core_deinit(); }
@@ -108,7 +114,9 @@ void Window_RequestClose(void) {
 *----------------------------------------------------Input processing-----------------------------------------------------*
 *#########################################################################################################################*/
 void Window_ProcessEvents(float delta) {
+#ifndef CC_BUILD_CXBX
 	usbh_pooling_hubs();
+#endif
 }
 
 void Cursor_SetPosition(int x, int y) { } // Makes no sense for Xbox

@@ -4,6 +4,8 @@
 /* For abs(x) function */
 #include <stdlib.h>
 
+#define PI 3.141592653589793238462643383279502884197169399
+
 /* Sega saturn is missing these intrinsics */
 #ifdef CC_BUILD_SATURN
 #include <stdint.h>
@@ -39,9 +41,6 @@ float sqrtf(float x) {
 
 float Math_Mod1(float x)  { return x - (int)x; /* fmodf(x, 1); */ }
 int   Math_AbsI(int x)    { return abs(x); /* MSVC intrinsic */ }
-
-float Math_SinF(float x) { return (float)Math_Sin(x); }
-float Math_CosF(float x) { return (float)Math_Cos(x); }
 
 int Math_Floor(float value) {
 	int valueI = (int)value;
@@ -80,8 +79,8 @@ float Math_ClampAngle(float degrees) {
 }
 
 float Math_LerpAngle(float leftAngle, float rightAngle, float t) {
-	/* We have to cheat a bit for angles here */
-	/* Consider 350* --> 0*, we only want to travel 10* */
+	/* Need to potentially adjust a bit when interpolating some angles */
+	/* Consider 350* --> 0*, we only want to interpolate across the 10* */
 	/* But without adjusting for this case, we would interpolate back the whole 350* degrees */
 	cc_bool invertLeft  = leftAngle  > 270.0f && rightAngle < 90.0f;
 	cc_bool invertRight = rightAngle > 270.0f && leftAngle  < 90.0f;
@@ -147,8 +146,6 @@ float Random_Float(RNGState* seed) {
 /*########################################################################################################################*
 *--------------------------------------------------Transcendental functions-----------------------------------------------*
 *#########################################################################################################################*/
-static const double SQRT2 = 1.4142135623730950488016887242096980785696718753769;
-
 #ifdef CC_BUILD_DREAMCAST
 #include <math.h>
 
@@ -156,12 +153,10 @@ static const double SQRT2 = 1.4142135623730950488016887242096980785696718753769;
 /* TODO: Properly investigate this issue */
 /* double make_dreamcast_build_compile(void) { fabs(4); } */
 
-double Math_Sin(double x)  { return sin(x); }
-double Math_Cos(double x)  { return cos(x); }
+float Math_SinF(float x)   { return sinf(x); }
+float Math_CosF(float x)   { return cosf(x); }
 double Math_Exp2(double x) { return exp2(x); }
 double Math_Log2(double x) { return log2(x); }
-
-float Math_Atan2f(float x, float y) { return atan2f(y, x); }
 #else
 /***** Caleb's Math functions *****/
 
@@ -187,7 +182,7 @@ float Math_Atan2f(float x, float y) { return atan2f(y, x); }
 /*  from the mathematical functions anyways */
 
 /* Global constants */
-#define PI 3.141592653589793238462643383279502884197169399
+static const double SQRT2 = 1.4142135623730950488016887242096980785696718753769;
 #define DIV_2_PI (1.0 / (2.0 * PI))
 
 static const cc_uint64 _DBL_NAN = 0x7FF8000000000000ULL;
@@ -217,7 +212,7 @@ static double Floord(double x) {
  * Precision: 16.47
  */
 static double SinStage1(double x) {
-	const double A[] = {
+	const static double A[] = {
 		.52359877559829885532,
 		-.2392459620393377657e-1,
 		.32795319441392666e-3,
@@ -272,11 +267,11 @@ static double SinStage3(double x) {
  * Associated math function: sin(x)
  * Allowed input range: anything
  */
-double Math_Sin(double x) {
+float Math_SinF(float x) {
 	double x_div_pi;
 
 	x_div_pi = x * DIV_2_PI;
-	return SinStage3(x_div_pi - Floord(x_div_pi));
+	return (float)SinStage3(x_div_pi - Floord(x_div_pi));
 }
 
 /************
@@ -289,11 +284,11 @@ double Math_Sin(double x) {
  * Associated math function: cos(x)
  * Allowed input range: anything
  */
-double Math_Cos(double x) {
+float Math_CosF(float x) {
 	double x_div_pi_shifted;
 
 	x_div_pi_shifted = x * DIV_2_PI + 0.25;
-	return SinStage3(x_div_pi_shifted - Floord(x_div_pi_shifted));
+	return (float)SinStage3(x_div_pi_shifted - Floord(x_div_pi_shifted));
 }
 
 /************
@@ -433,7 +428,7 @@ double Math_Log2(double x) {
 	if (x == POS_INF)
 		return POS_INF;
 
-	if (x == NEG_INF || x == DBL_NAN || x <= 0.0)
+	if (x == DBL_NAN || x <= 0.0)
 		return DBL_NAN;
 
 	doi.d = x;
@@ -445,7 +440,7 @@ double Math_Log2(double x) {
 
 	return exponent + Log2Stage1(doi.d);
 }
-
+#endif
 
 // Approximation of atan2f using the Remez algorithm
 //  https://math.stackexchange.com/a/1105038
@@ -468,4 +463,6 @@ float Math_Atan2f(float x, float y) {
 	if (y < 0)   r = -r;
 	return r;
 }
-#endif
+
+double Math_Sin(double x) { return Math_SinF(x); }
+double Math_Cos(double x) { return Math_CosF(x); }

@@ -36,6 +36,7 @@ static void HeldBlockRenderer_RenderModel(void) {
 
 	Gfx_SetFaceCulling(true);
 	Gfx_SetDepthTest(false);
+	Gfx_SetDepthWrite(false);
 	/* TODO: Need to properly reallocate per model VB here */
 
 	if (Blocks.Draw[held_block] == DRAW_GAS) {
@@ -43,7 +44,6 @@ static void HeldBlockRenderer_RenderModel(void) {
 		SetHeldModel(model);
 		Vec3_Set(held_entity.ModelScale, 1.0f,1.0f,1.0f);
 
-		Gfx_SetAlphaTest(true);
 		Model_RenderArm(model, &held_entity);
 		Gfx_SetAlphaTest(false);
 	} else {	
@@ -57,6 +57,7 @@ static void HeldBlockRenderer_RenderModel(void) {
 	}
 	
 	Gfx_SetDepthTest(true);
+	Gfx_SetDepthWrite(true);
 	Gfx_SetFaceCulling(false);
 }
 
