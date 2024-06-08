@@ -24,6 +24,7 @@ jobs:
         run: |
           LATEST_FLAG=-DCC_COMMIT_SHA=\"${GITHUB_SHA::9}\"
  
+			find /usr/lib/llvm-14
           cd src
           PATH=$PATH:/usr/local/compiler/target/bin
           i386-apple-darwin8-clang *.c Window_cocoa.m ${{ env.COMMON_FLAGS }} $LATEST_FLAG -o cc-mac32-gl1 -framework Cocoa -framework OpenGL -framework IOKit -lobjc -lgcc_s.1
