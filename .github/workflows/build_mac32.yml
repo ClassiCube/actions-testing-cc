@@ -2,7 +2,7 @@ name: Build latest (macOS 32 bit)
 on: [push]
 
 concurrency:
-  group: ${{ github.ref }}-mac32
+  group: ${{ github.ref }}-mac32-legacy
   cancel-in-progress: true
 
 jobs:
