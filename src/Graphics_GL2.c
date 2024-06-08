@@ -1,7 +1,6 @@
 /* Silence deprecation warnings on modern macOS/iOS */
 #define GL_SILENCE_DEPRECATION
 #define GLES_SILENCE_DEPRECATION
-
 #include "Core.h"
 #if CC_GFX_BACKEND == CC_GFX_BACKEND_GL2
 #include "_GraphicsBase.h"
