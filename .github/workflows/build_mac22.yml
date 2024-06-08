@@ -16,7 +16,7 @@ jobs:
         password: ${{ secrets.GHCR_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
-      - name: Compile 64 bit macOS builds
+      - name: Compile 32 bit macOS builds
         shell: bash
         id: compile
         env: 
