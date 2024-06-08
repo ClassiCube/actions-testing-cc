@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/classicube/minimal-osxcross:latest
+      credentials:
+        username: UnknownShadow200
+        password: ${{ secrets.GHCR_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
       - name: Compile 64 bit macOS builds
