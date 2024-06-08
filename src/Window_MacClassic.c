@@ -14,6 +14,7 @@
 #include <Dialogs.h>
 #include <Fonts.h>
 #include <Events.h>
+#include <LowMem.h>
 #ifndef M68K_INLINE
 #include <DiskInit.h>
 #include <Scrap.h>
@@ -21,6 +22,78 @@
 #include <Gestalt.h>
 static WindowPtr win;
 static cc_bool hasColorQD, useGWorld;
+
+
+/*########################################################################################################################*
+*--------------------------------------------------Console log window-----------------------------------------------------*
+*#########################################################################################################################*/
+static int con_cellSizeX, con_cellSizeY;
+static int con_rows, con_cols;
+static int cursorX, cursorY;
+static WindowPtr con_win;
+static Rect con_bounds;
+
+static void Console_EraseLine(int y) {
+	Rect r   = con_bounds;
+	r.top    += y * con_cellSizeY;
+	r.bottom = r.top + con_cellSizeY;
+
+	MoveTo(r.left, r.bottom - 2);
+	EraseRect(&r);
+}
+
+static void Console_Init(void) {
+	Rect r = qd.screenBits.bounds;
+	r.top += 40;
+	InsetRect(&r, 5, 5);  
+
+	con_win = NewWindow(NULL, &r, "\pConsole log", true, 0, (WindowPtr)-1, true, 0);
+	GrafPtr savedPort;
+	GetPort(&savedPort);
+	SetPort(con_win);
+
+	con_bounds = con_win->portRect;
+	EraseRect(&con_bounds);
+
+	TextFont(kFontIDMonaco);
+	TextSize(9);
+
+	InsetRect(&con_bounds, 2, 2);
+	con_cellSizeX = CharWidth('M');
+	con_cellSizeY = 12;
+
+	con_rows = (con_bounds.bottom - con_bounds.top)  / con_cellSizeY;
+	con_cols = (con_bounds.right  - con_bounds.left) / con_cellSizeX;
+
+	Console_EraseLine(0);
+	cursorX = cursorY = 0;
+	SetPort(savedPort);
+}
+
+static void Console_NewLine(void) {
+	Console_EraseLine(cursorY);
+	cursorY++;
+	cursorX = 0;
+	if (cursorY >= con_rows) cursorY = 0;
+}
+
+void Console_Write(const char* msg, int len) {
+	if (!con_win) Console_Init();
+
+	GrafPtr savedPort;
+	GetPort(&savedPort);
+	SetPort(con_win);
+
+	for (int i = 0; i < len; i++) 
+	{
+		DrawChar(msg[i]);
+		cursorX++;
+		if (cursorX >= con_cols) Console_NewLine();
+	}
+	Console_NewLine();
+
+	SetPort(savedPort);
+}
 
 
 /*########################################################################################################################*
@@ -79,6 +152,7 @@ void Window_PreInit(void) {
 	for (int i = 0; i < 5; i++)
 		EventAvail(everyEvent, &event);
 	FlushEvents(everyEvent, 0);
+	SetEventMask(everyEvent);
 
     long tmpLong = 0;
     Gestalt(gestaltQuickdrawVersion, &tmpLong);
@@ -182,7 +256,7 @@ void Window_RequestClose(void) {
 
 static void HandleMouseDown(EventRecord* event) {
 	MAC_WindowPartCode part;
-	WindowPtr      window;
+	WindowPtr window;
 	Point localPoint;
                     
 	int x, y;
@@ -298,6 +372,10 @@ static void Cursor_GetRawPos(int* x, int* y) {
 
 void Cursor_SetPosition(int x, int y) { 
 	// TODO
+	Point where;
+	where.h = x;
+	where.v = y;
+	//LMSetRawMouseLocation(where);
 }
 
 static void Cursor_DoSetVisible(cc_bool visible) {
@@ -329,14 +407,15 @@ cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
 
 static GWorldPtr fb_world;
 static PixMapHandle fb_pixmap;
-static int fb_stride;
-static char* fb_bits;
 
-void Window_AllocFramebuffer(struct Bitmap* bmp) {
-	bmp->scan0 = (BitmapCol*)Mem_Alloc(bmp->width * bmp->height, 4, "window pixels");
-	if (!useGWorld) return;
+void Window_AllocFramebuffer(struct Bitmap* bmp, int width, int height) {
+	if (!useGWorld) {
+		bmp->scan0  = (BitmapCol*)Mem_Alloc(width * height, 4, "window pixels");
+		bmp->width  = width;
+		bmp->height = height;
+		return;
+	}
 
-	// TODO bmp->scan0 should be the fb_world
 	QDErr err = NewGWorld(&fb_world, 32, &win->portRect, 0, 0, 0);
 	if (err != noErr) Logger_Abort2(err, "Failed to allocate GWorld");
 	
@@ -344,28 +423,17 @@ void Window_AllocFramebuffer(struct Bitmap* bmp) {
 	if (!fb_pixmap) Logger_Abort("Failed to allocate pixmap");
 
 	LockPixels(fb_pixmap);
-	fb_stride = (*fb_pixmap)->rowBytes & 0x3FFF;
-	fb_bits   = (char*)GetPixBaseAddr(fb_pixmap);
+	int stride = (*fb_pixmap)->rowBytes & 0x3FFF;
+
+	bmp->scan0  = (BitmapCol*)GetPixBaseAddr(fb_pixmap);
+	bmp->width  = stride >> 2;
+	bmp->height = height;
 }
 
 static void DrawFramebufferBulk(Rect2D r, struct Bitmap* bmp) {
     GrafPtr thePort = (GrafPtr)win;
-	BitMap* memBits;
-	BitMap* winBits;
-
-	for (int y = r.y; y < r.y + r.height; y++)
-	{
-		BitmapCol* src = Bitmap_GetRow(bmp, y);
-		uint32_t*  dst = (uint32_t*)(fb_bits + fb_stride * y);
-		
-		for (int x = r.x; x < r.x + r.width; x++)
-		{
-			dst[x] = src[x];
-		}
-	}
-
-	memBits = &((GrafPtr)fb_world)->portBits;
-	winBits = &thePort->portBits;
+	BitMap* memBits = &((GrafPtr)fb_world)->portBits;
+	BitMap* winBits = &thePort->portBits;
 
 	Rect update;
 	update.left   = r.x;

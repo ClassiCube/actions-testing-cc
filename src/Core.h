@@ -139,6 +139,7 @@ typedef cc_uint8  cc_bool;
 #define CC_GFX_BACKEND_VULKAN    0x0081
 
 #define CC_BUILD_NETWORKING
+//#define CC_BUILD_FREETYPE
 #define CC_BUILD_RESOURCES
 #define CC_BUILD_PLUGINS
 #define CC_BUILD_ANIMATIONS
@@ -223,11 +224,13 @@ typedef cc_uint8  cc_bool;
 #elif defined Macintosh
 	#define DEFAULT_GFX_BACKEND CC_GFX_BACKEND_SOFTGPU
 	#define CC_BUILD_MACCLASSIC
-	#define CC_BUILD_HTTPCLIENT
-	#define CC_BUILD_OPENAL
 	#define CC_BUILD_LOWMEM
 	#define CC_BUILD_COOPTHREADED
+	#define CC_BUILD_NOMUSIC
+	#define CC_BUILD_NOSOUNDS
+	#undef  CC_BUILD_RESOURCES
 	#undef  CC_BUILD_FREETYPE
+	#undef  CC_BUILD_NETWORKING
 #elif defined __sun__
 	#define CC_BUILD_SOLARIS
 	#define CC_BUILD_POSIX
