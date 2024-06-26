@@ -31,8 +31,11 @@
 	#define _GNU_SOURCE
 	#include <sys/ucontext.h>
 	#include <signal.h>
+#elif defined CC_BUILD_SOLARIS
+	#include <signal.h>
+	#include <sys/ucontext.h>
+	#include <sys/regset.h>
 #elif defined CC_BUILD_POSIX
-	#define __EXTENSIONS__
 	#include <signal.h>
 	#include <sys/ucontext.h>
 #endif
