@@ -28,7 +28,7 @@ jobs:
           echo $LATEST_FLAG
           
           cd src
-          sparcv9-sun-solaris-gcc *.c ${{ env.COMMON_FLAGS }} ${{ env.PLAT64_FLAGS }} $LATEST_FLAG -o cc-illumos64-gl1 -lsocket -lX11 -lXi -lGL
+          sparcv9-sun-solaris2.10-gcc *.c ${{ env.COMMON_FLAGS }} ${{ env.PLAT64_FLAGS }} $LATEST_FLAG -o cc-illumos64-gl1 -lsocket -lX11 -lXi -lGL
 
 
       - uses: ./.github/actions/notify_failure
