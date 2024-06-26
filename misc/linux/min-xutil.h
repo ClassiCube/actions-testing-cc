@@ -224,12 +224,6 @@ extern int XSetSizeHints(
     Atom		/* property */
 );
 
-extern int XSetWMHints(
-    Display*		/* display */,
-    Window		/* w */,
-    XWMHints*		/* wm_hints */
-);
-
 extern void XSetWMNormalHints(
     Display*		/* display */,
     Window		/* w */,
