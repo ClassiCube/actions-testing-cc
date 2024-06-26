@@ -16,7 +16,7 @@
 #include <X11/extensions/XInput2.h>
 #endif
 */
-#include <X11/Xlib.h>
+#include "../misc/linux/min-xlib.h"
 #include "../misc/linux/min-keysymdef.h"
 #include "../misc/linux/min-xutil.h"
 #include "../misc/linux/min-xkblib.h"
