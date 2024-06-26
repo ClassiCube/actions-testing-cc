@@ -100,53 +100,6 @@ typedef struct {
 /* obsolete */
 #define PAllHints (PPosition|PSize|PMinSize|PMaxSize|PResizeInc|PAspect)
 
-
-
-typedef struct {
-	long flags;	/* marks which fields in this structure are defined */
-	Bool input;	/* does this application rely on the window manager to
-			get keyboard input? */
-	int initial_state;	/* see below */
-	Pixmap icon_pixmap;	/* pixmap to be used as icon */
-	Window icon_window; 	/* window to be used as icon */
-	int icon_x, icon_y; 	/* initial position of icon */
-	Pixmap icon_mask;	/* icon mask bitmap */
-	XID window_group;	/* id of related window group */
-	/* this structure may be extended in the future */
-} XWMHints;
-
-/* definition for flags of XWMHints */
-
-#define InputHint 		(1L << 0)
-#define StateHint 		(1L << 1)
-#define IconPixmapHint		(1L << 2)
-#define IconWindowHint		(1L << 3)
-#define IconPositionHint 	(1L << 4)
-#define IconMaskHint		(1L << 5)
-#define WindowGroupHint		(1L << 6)
-#define AllHints (InputHint|StateHint|IconPixmapHint|IconWindowHint| \
-IconPositionHint|IconMaskHint|WindowGroupHint)
-#define XUrgencyHint		(1L << 8)
-
-/* definitions for initial window state */
-#define WithdrawnState 0	/* for windows that are not mapped */
-#define NormalState 1	/* most applications want to start this way */
-#define IconicState 3	/* application wants to start as an icon */
-
-/*
- * Obsolete states no longer defined by ICCCM
- */
-#define DontCareState 0	/* don't know or care */
-#define ZoomState 2	/* application wants to start zoomed */
-#define InactiveState 4	/* application believes it is seldom used; */
-			/* some wm's may put it on inactive menu */
-
-typedef struct {
-	int min_width, min_height;
-	int max_width, max_height;
-	int width_inc, height_inc;
-} XIconSize;
-
 typedef struct {
 	char *res_name;
 	char *res_class;
