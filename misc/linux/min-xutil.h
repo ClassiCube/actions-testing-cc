@@ -50,7 +50,7 @@ SOFTWARE.
 #define _X11_XUTIL_H_
 
 /* You must include <X11/Xlib.h> before including this file */
-#include <X11/Xlib.h>
+#include "min-xlib.h"
 
 /* The Xlib structs are full of implicit padding to properly align members.
    We can't clean that up without breaking ABI, so tell clang not to bother
