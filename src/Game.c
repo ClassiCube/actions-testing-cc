@@ -42,7 +42,7 @@
 #include "EntityRenderers.h"
 
 struct _GameData Game;
-cc_uint64 Game_FrameStart;
+static cc_uint64 frameStart;
 cc_bool Game_UseCPEBlocks;
 
 struct RayTracer Game_SelectedPos;
@@ -53,6 +53,7 @@ int Game_MaxViewDistance  = DEFAULT_MAX_VIEWDIST;
 int     Game_FpsLimit, Game_Vertices;
 cc_bool Game_SimpleArmsAnim;
 static cc_bool gameRunning;
+static float gfx_minFrameMs;
 
 cc_bool Game_ClassicMode, Game_ClassicHacks;
 cc_bool Game_AllowCustomBlocks;
@@ -309,7 +310,8 @@ static void HandleOnNewMapLoaded(void* obj) {
 static void HandleInactiveChanged(void* obj) {
 	if (Window_Main.Inactive) {
 		Chat_AddOf(&Gfx_LowPerfMessage, MSG_TYPE_EXTRASTATUS_2);
-		Gfx_SetFpsLimit(false, 1000 / 1.0f);
+		Gfx_SetVSync(false);
+		Game_SetMinFrameTime(1000 / 1.0f);
 		Gfx.ReducedPerfMode = true;
 	} else {
 		Chat_AddOf(&String_Empty,       MSG_TYPE_EXTRASTATUS_2);
@@ -355,11 +357,12 @@ static void LoadOptions(void) {
 }
 
 #ifdef CC_BUILD_PLUGINS
-static void LoadPlugin(const cc_string* path, void* obj) {
+static void LoadPlugin(const cc_string* path, void* obj, int isDirectory) {
 	void* lib;
 	void* verSym;  /* EXPORT int Plugin_ApiVersion = GAME_API_VER; */
 	void* compSym; /* EXPORT struct IGameComponent Plugin_Component = { (whatever) } */
 	int ver;
+	if (isDirectory) return;
 
 	/* ignore accepted.txt, deskop.ini, .pdb files, etc */
 	if (!String_CaselessEnds(path, &DynamicLib_Ext)) return;
@@ -399,7 +402,7 @@ static void LoadPlugins(void) {
 static void LoadPlugins(void) { }
 #endif
 
-static void Game_Free(void* obj);
+static void Game_PendingClose(void* obj) { gameRunning = false; }
 static void Game_Load(void) {
 	struct IGameComponent* comp;
 	Game_UpdateDimensions();
@@ -414,7 +417,7 @@ static void Game_Load(void) {
 	Event_Register_(&WorldEvents.NewMap,           NULL, HandleOnNewMap);
 	Event_Register_(&WorldEvents.MapLoaded,        NULL, HandleOnNewMapLoaded);
 	Event_Register_(&WindowEvents.Resized,         NULL, Game_OnResize);
-	Event_Register_(&WindowEvents.Closing,         NULL, Game_Free);
+	Event_Register_(&WindowEvents.Closing,         NULL, Game_PendingClose);
 	Event_Register_(&WindowEvents.InactiveChanged, NULL, HandleInactiveChanged);
 
 	Game_AddComponent(&World_Component);
@@ -479,8 +482,21 @@ void Game_SetFpsLimit(int method) {
 	case FPS_LIMIT_60:  minFrameTime = 1000/60.0f;  break;
 	case FPS_LIMIT_30:  minFrameTime = 1000/30.0f;  break;
 	}
-	Gfx_SetFpsLimit(method == FPS_LIMIT_VSYNC, minFrameTime);
+	Gfx_SetVSync(method == FPS_LIMIT_VSYNC);
+	Game_SetMinFrameTime(minFrameTime);
 }
+
+#ifdef CC_BUILD_WEB
+extern void Window_SetMinFrameTime(float timeMS);
+
+void Game_SetMinFrameTime(float frameTimeMS) {
+	if (frameTimeMS) Window_SetMinFrameTime(frameTimeMS);
+}
+#else
+void Game_SetMinFrameTime(float frameTimeMS) {
+	gfx_minFrameMs = frameTimeMS;
+}
+#endif
 
 static void UpdateViewMatrix(void) {
 	Camera.Active->GetView(&Gfx.View);
@@ -565,7 +581,7 @@ void Game_TakeScreenshot(void) {
 	struct DateTime now;
 	cc_result res;
 #ifdef CC_BUILD_WEB
-	char str[NATIVE_STR_LEN];
+	cc_filepath str;
 #else
 	struct Stream stream;
 #endif
@@ -578,8 +594,8 @@ void Game_TakeScreenshot(void) {
 
 #ifdef CC_BUILD_WEB
 	extern void interop_TakeScreenshot(const char* path);
-	String_EncodeUtf8(str, &filename);
-	interop_TakeScreenshot(str);
+	Platform_EncodePath(&str, &filename);
+	interop_TakeScreenshot(&str);
 #else
 	if (!Utils_EnsureDirectory("screenshots")) return;
 	String_InitArray(path, pathBuffer);
@@ -602,6 +618,41 @@ void Game_TakeScreenshot(void) {
 #endif
 #endif
 }
+
+
+#ifdef CC_BUILD_WEB
+static void LimitFPS(void) {
+	/* Can't use Thread_Sleep on the web. (spinwaits instead of sleeping) */
+	/* Instead the web browser manages the frame timing */
+}
+#else
+static float gfx_targetTime, gfx_actualTime;
+
+/* Examines difference between expected and actual frame times, */
+/*  then sleeps if actual frame time is too fast */
+static void LimitFPS(void) {
+	cc_uint64 frameEnd, sleepEnd;
+	
+	frameEnd = Stopwatch_Measure();
+	gfx_actualTime += Stopwatch_ElapsedMicroseconds(frameStart, frameEnd) / 1000.0f;
+	gfx_targetTime += gfx_minFrameMs;
+
+	/* going faster than FPS limit - sleep to slow down */
+	if (gfx_actualTime < gfx_targetTime) {
+		float cooldown = gfx_targetTime - gfx_actualTime;
+		Thread_Sleep((int)(cooldown + 0.5f));
+
+		/* also accumulate Thread_Sleep duration, as actual sleep */
+		/*  duration can significantly deviate from requested time */ 
+		/*  (e.g. requested 4ms, but actually slept for 8ms) */
+		sleepEnd = Stopwatch_Measure();
+		gfx_actualTime += Stopwatch_ElapsedMicroseconds(frameEnd, sleepEnd) / 1000.0f;
+	}
+
+	/* reset accumulated time to avoid excessive FPS drift */
+	if (gfx_targetTime >= 1000) { gfx_actualTime = 0; gfx_targetTime = 0; }
+}
+#endif
 
 static CC_INLINE void Game_DrawFrame(float delta, float t) {
 	UpdateViewMatrix();
@@ -637,6 +688,7 @@ static CC_INLINE void Game_DrawFrame(float delta, float t) {
 #ifdef CC_BUILD_SPLITSCREEN
 static void DrawSplitscreen(float delta, float t, int i, int x, int y, int w, int h) {
 	Gfx_SetViewport(x, y, w, h);
+	Gfx_SetScissor( x, y, w, h);
 	
 	Entities.CurPlayer = &LocalPlayer_Instances[i];
 	LocalPlayer_SetInterpPosition(Entities.CurPlayer, t);
@@ -646,9 +698,17 @@ static void DrawSplitscreen(float delta, float t, int i, int x, int y, int w, in
 }
 #endif
 
-static CC_INLINE void Game_RenderFrame(double delta) {
+static CC_INLINE void Game_RenderFrame(void) {
 	struct ScheduledTask entTask;
 	float t;
+
+	cc_uint64 render = Stopwatch_Measure();
+	double delta     = Stopwatch_ElapsedMicroseconds(frameStart, render) / (1000.0 * 1000.0);
+	Window_ProcessEvents(delta);
+
+	if (delta > 5.0)  delta = 5.0; /* avoid large delta with suspended process */
+	if (delta <= 0.0) return;
+	frameStart = render;
 
 	/* TODO: Should other tasks get called back too? */
 	/* Might not be such a good idea for the http_clearcache, */
@@ -719,9 +779,11 @@ static CC_INLINE void Game_RenderFrame(double delta) {
 
 	if (Game_ScreenshotRequested) Game_TakeScreenshot();
 	Gfx_EndFrame();
+	if (gfx_minFrameMs) LimitFPS();
 }
 
-static void Game_Free(void* obj) {
+
+static void Game_Free(void) {
 	struct IGameComponent* comp;
 	/* Most components will call OnContextLost in their Free functions */
 	/* Set to false so components will always free managed textures too */
@@ -729,7 +791,8 @@ static void Game_Free(void* obj) {
 	Event_UnregisterAll();
 	tasksCount = 0;
 
-	for (comp = comps_head; comp; comp = comp->next) {
+	for (comp = comps_head; comp; comp = comp->next) 
+	{
 		if (comp->Free) comp->Free();
 	}
 
@@ -740,30 +803,24 @@ static void Game_Free(void* obj) {
 	Window_DisableRawMouse();
 }
 
-#define Game_DoFrameBody() \
-	render = Stopwatch_Measure();\
-	delta  = Stopwatch_ElapsedMicroseconds(Game_FrameStart, render) / (1000.0 * 1000.0);\
-	\
-	Window_ProcessEvents(delta);\
-	if (!gameRunning) return;\
-	\
-	if (delta > 5.0) delta = 5.0; /* avoid large delta with suspended process */ \
-	if (delta > 0.0) { Game_FrameStart = render; Game_RenderFrame(delta); }
-
 #ifdef CC_BUILD_WEB
 void Game_DoFrame(void) {
-	cc_uint64 render; 
-	double delta;
-	Game_DoFrameBody()
+	if (gameRunning) {
+		Game_RenderFrame();
+	} else if (tasksCount) {
+		Game_Free();
+		Window_Free();
+	}	
 }
 
 static void Game_RunLoop(void) {
-	Game_FrameStart = Stopwatch_Measure();
 	/* Window_Web.c sets Game_DoFrame as the main loop callback function */
 	/* (i.e. web browser is in charge of calling Game_DoFrame, not us) */
 }
 
 cc_bool Game_ShouldClose(void) {
+	if (!gameRunning) return true;
+
 	if (Server.IsSinglePlayer) {
 		/* Close if map was saved within last 5 seconds */
 		return World.LastSave + 5 >= Game.Time;
@@ -776,11 +833,11 @@ cc_bool Game_ShouldClose(void) {
 }
 #else
 static void Game_RunLoop(void) {
-	cc_uint64 render;
-	double delta;
-
-	Game_FrameStart = Stopwatch_Measure();
-	for (;;) { Game_DoFrameBody() }
+	while (gameRunning)
+	{
+		Game_RenderFrame();
+	}
+	Game_Free();
 }
 #endif
 
@@ -792,5 +849,7 @@ void Game_Run(int width, int height, const cc_string* title) {
 
 	Game_Load();
 	Event_RaiseVoid(&WindowEvents.Resized);
+
+	frameStart = Stopwatch_Measure();
 	Game_RunLoop();
 }

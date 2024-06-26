@@ -1,5 +1,11 @@
 name: Build latest (PS1)
-on: [push]
+# trigger via either push to selected branches or on manual run
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.ref }}-ps1
@@ -7,19 +13,17 @@ concurrency:
 
 jobs:
   build-PS1:
-    if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/classicube/minimal-psn00b:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile PS3 build
+      - name: Compile PS1 build
         id: compile
         run: |
           apt-get update
           apt-get install -y curl
           export PSNOOB=/usr/local/psnoob
-          export PSL1GHT=/usr/local/ps3dev
           export PATH=$PATH:$PSNOOB/bin
           export PSN00BSDK_LIBS=$PSNOOB/lib/libpsn00b
           make ps1
@@ -55,10 +59,3 @@ jobs:
         with:
           SOURCE_FILE: 'misc/ps1/build/template.cue'
           DEST_NAME: 'ClassiCube-PS1.cue'
-          
-          
-      - uses: ./.github/actions/notify_success
-        if: ${{ always() && steps.compile.outcome == 'success' }}
-        with:
-          DESTINATION_URL: '${{ secrets.NOTIFY_URL }}'
-          WORKFLOW_NAME: 'ps1'

@@ -355,9 +355,8 @@ void Gfx_GetApiInfo(cc_string* info) {
 	PrintMaxTextureInfo(info);
 }
 
-void Gfx_SetFpsLimit(cc_bool vsync, float minFrameMs) {
-	gfx_minFrameMs = minFrameMs;
-	gfx_vsync      = vsync;
+void Gfx_SetVSync(cc_bool vsync) {
+	gfx_vsync = vsync;
 }
 
 void Gfx_BeginFrame(void) {
@@ -387,8 +386,6 @@ void Gfx_EndFrame(void) {
 
 	while (pb_busy())     { } // Wait for frame completion
 	while (pb_finished()) { } // Swap when possible
-	
-	if (gfx_minFrameMs) LimitFPS();
 }
 
 
@@ -590,19 +587,19 @@ void Gfx_DisableTextureOffset(void) {
 }
 
 void Gfx_SetViewport(int x, int y, int w, int h) {
-    vp_scale.x  = w *  0.5f;
-    vp_scale.y  = h * -0.5f;
-    vp_offset.x = x + w * 0.5f;
-    vp_offset.y = y + h * 0.5f;
-
-	uint32_t* p;
-	p = pb_begin();
-    // NV097_SET_SURFACE_CLIP_HORIZONTAL followed by NV097_SET_SURFACE_CLIP_VERTICAL 
-    p = pb_push2(p, NV097_SET_SURFACE_CLIP_HORIZONTAL, x | (w << 16), y | (h << 16));
-    pb_end(p);
+	vp_scale.x  = w *  0.5f;
+	vp_scale.y  = h * -0.5f;
+	vp_offset.x = x + w * 0.5f;
+	vp_offset.y = y + h * 0.5f;
 }
 
-
+void Gfx_SetScissor(int x, int y, int w, int h) {
+	uint32_t* p;
+	p = pb_begin();
+	// NV097_SET_SURFACE_CLIP_HORIZONTAL followed by NV097_SET_SURFACE_CLIP_VERTICAL 
+	p = pb_push2(p, NV097_SET_SURFACE_CLIP_HORIZONTAL, x | (w << 16), y | (h << 16));
+	pb_end(p);
+}
 
 
 /*########################################################################################################################*

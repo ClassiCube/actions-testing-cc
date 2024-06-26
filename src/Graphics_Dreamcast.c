@@ -4,37 +4,54 @@
 #include "Errors.h"
 #include "Logger.h"
 #include "Window.h"
-#include "../third_party/gldc/gldc.h"
-#include "../third_party/gldc/src/draw.c"
 #include <malloc.h>
 #include <kos.h>
 #include <dc/matrix.h>
 #include <dc/pvr.h>
+#include "../third_party/gldc/src/gldc.h"
+
 static cc_bool renderingDisabled;
+#define VERTEX_BUFFER_SIZE 32 * 40000
+#define PT_ALPHA_REF 0x011c
 
 
 /*########################################################################################################################*
 *---------------------------------------------------------General---------------------------------------------------------*
 *#########################################################################################################################*/
-static void InitGLState(void) {
-	glClearDepth(1.0f);
-	GPUSetAlphaCutOff(127);
+static void InitPowerVR(void) {
+	cc_bool autosort = false; // Turn off auto sorting to match traditional GPU behaviour
+	cc_bool fsaa     = false;
+	AUTOSORT_ENABLED = autosort;
 
-	ALPHA_TEST_ENABLED = GL_FALSE;
-	CULLING_ENABLED    = GL_FALSE;
-	BLEND_ENABLED      = GL_FALSE;
-	DEPTH_TEST_ENABLED = GL_FALSE;
-	DEPTH_MASK_ENABLED = GL_TRUE;
-	TEXTURES_ENABLED   = GL_FALSE;
-	FOG_ENABLED        = GL_FALSE;
+	pvr_init_params_t params = {
+		// Opaque, punch through, translucent polygons with largest bin sizes
+		{ PVR_BINSIZE_32, PVR_BINSIZE_0, PVR_BINSIZE_32, PVR_BINSIZE_0, PVR_BINSIZE_32 },
+		VERTEX_BUFFER_SIZE,
+		0, fsaa,
+		(autosort) ? 0 : 1
+	};
+    pvr_init(&params);
+}
+
+static void InitGLState(void) {
+	pvr_set_zclip(0.0f);
+	PVR_SET(PT_ALPHA_REF, 127); // define missing from KOS
+
+	ALPHA_TEST_ENABLED = false;
+	CULLING_ENABLED    = false;
+	BLEND_ENABLED      = false;
+	DEPTH_TEST_ENABLED = false;
+	DEPTH_MASK_ENABLED = true;
+	TEXTURES_ENABLED   = false;
+	FOG_ENABLED        = false;
 	
-	STATE_DIRTY = GL_TRUE;
+	STATE_DIRTY = true;
 }
 
 void Gfx_Create(void) {
+	if (!Gfx.Created) InitPowerVR();
 	if (!Gfx.Created) glKosInit();
 
-	Gfx_SetViewport(0, 0, Game.Width, Game.Height);
 	InitGLState();
 	
 	Gfx.MinTexWidth  = 8;
@@ -63,12 +80,12 @@ static PackedCol gfx_clearColor;
 
 void Gfx_SetFaceCulling(cc_bool enabled) { 
 	CULLING_ENABLED = enabled;
-	STATE_DIRTY     = GL_TRUE;
+	STATE_DIRTY     = true;
 }
 
 static void SetAlphaBlend(cc_bool enabled) { 
 	BLEND_ENABLED = enabled;
-	STATE_DIRTY   = GL_TRUE;
+	STATE_DIRTY   = true;
 }
 void Gfx_SetAlphaArgBlend(cc_bool enabled) { }
 
@@ -90,19 +107,19 @@ void Gfx_SetDepthWrite(cc_bool enabled) {
 	if (DEPTH_MASK_ENABLED == enabled) return;
 	
 	DEPTH_MASK_ENABLED = enabled;
-	STATE_DIRTY        = GL_TRUE;
+	STATE_DIRTY        = true;
 }
 
 void Gfx_SetDepthTest(cc_bool enabled) { 
 	if (DEPTH_TEST_ENABLED == enabled) return;
 	
 	DEPTH_TEST_ENABLED = enabled;
-	STATE_DIRTY        = GL_TRUE;
+	STATE_DIRTY        = true;
 }
 
 static void SetAlphaTest(cc_bool enabled) {
 	ALPHA_TEST_ENABLED = enabled;
-	STATE_DIRTY        = GL_TRUE;
+	STATE_DIRTY        = true;
 }
 
 void Gfx_DepthOnlyRendering(cc_bool depthOnly) {
@@ -115,35 +132,34 @@ void Gfx_DepthOnlyRendering(cc_bool depthOnly) {
 *---------------------------------------------------------Matrices--------------------------------------------------------*
 *#########################################################################################################################*/
 void Gfx_CalcOrthoMatrix(struct Matrix* matrix, float width, float height, float zNear, float zFar) {
-	/* Transposed, source https://learn.microsoft.com/en-us/windows/win32/opengl/glortho */
+	/* Source https://learn.microsoft.com/en-us/windows/win32/direct3d9/d3dxmatrixorthooffcenterrh */
 	/*   The simplified calculation below uses: L = 0, R = width, T = 0, B = height */
+	/* NOTE: This calculation is shared with Direct3D 11 backend */
 	*matrix = Matrix_Identity;
 
 	matrix->row1.x =  2.0f / width;
 	matrix->row2.y = -2.0f / height;
-	matrix->row3.z = -2.0f / (zFar - zNear);
+	matrix->row3.z =  1.0f / (zNear - zFar);
 
 	matrix->row4.x = -1.0f;
 	matrix->row4.y =  1.0f;
-	matrix->row4.z = -(zFar + zNear) / (zFar - zNear);
+	matrix->row4.z = zNear / (zNear - zFar);
 }
 
 static float Cotangent(float x) { return Math_CosF(x) / Math_SinF(x); }
 void Gfx_CalcPerspectiveMatrix(struct Matrix* matrix, float fov, float aspect, float zFar) {
 	float zNear = 0.1f;
-	float c = Cotangent(0.5f * fov);
 
-	/* Transposed, source https://learn.microsoft.com/en-us/windows/win32/opengl/glfrustum */
-	/* For a FOV based perspective matrix, left/right/top/bottom are calculated as: */
-	/*   left = -c * aspect, right = c * aspect, bottom = -c, top = c */
-	/* Calculations are simplified because of left/right and top/bottom symmetry */
+	/* Source https://learn.microsoft.com/en-us/windows/win32/direct3d9/d3dxmatrixperspectivefovrh */
+	/* NOTE: This calculation is shared with Direct3D 11 backend */
+	float c = Cotangent(0.5f * fov);
 	*matrix = Matrix_Identity;
 
 	matrix->row1.x =  c / aspect;
 	matrix->row2.y =  c;
-	matrix->row3.z = -(zFar + zNear) / (zFar - zNear);
+	matrix->row3.z = zFar / (zNear - zFar);
 	matrix->row3.w = -1.0f;
-	matrix->row4.z = -(2.0f * zFar * zNear) / (zFar - zNear);
+	matrix->row4.z = (zNear * zFar) / (zNear - zFar);
 	matrix->row4.w =  0.0f;
 }
 
@@ -212,6 +228,7 @@ void Gfx_DeleteDynamicVb(GfxResourceID* vb) { Gfx_DeleteVb(vb); }
 *#########################################################################################################################*/
 void Gfx_BindTexture(GfxResourceID texId) {
 	gldcBindTexture((GLuint)texId);
+	STATE_DIRTY = true;
 }
 
 void Gfx_DeleteTexture(GfxResourceID* texId) {
@@ -318,11 +335,11 @@ static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8
 	GLuint texId = gldcGenTexture();
 	gldcBindTexture(texId);
 	
-	gldcAllocTexture(bmp->width, bmp->height, GL_RGBA,
-				GL_UNSIGNED_SHORT_4_4_4_4_REV_TWID_KOS);
+	int res = gldcAllocTexture(bmp->width, bmp->height, PVR_TXRFMT_ARGB4444);
+	if (res) { Platform_LogConst("Out of PVR VRAM!"); return 0; }
 				
 	void* pixels;
-	GLsizei width, height;
+	int width, height;
 	gldcGetTexture(&pixels, &width, &height);
 	ConvertTexture(pixels, bmp, rowWidth);
 	return texId;
@@ -358,7 +375,7 @@ void Gfx_UpdateTexture(GfxResourceID texId, int x, int y, struct Bitmap* part, i
 	gldcBindTexture(texId);
 				
 	void* pixels;
-	GLsizei width, height;
+	int width, height;
 	gldcGetTexture(&pixels, &width, &height);
 	
 	ConvertSubTexture(pixels, width, height,
@@ -379,7 +396,7 @@ void Gfx_SetFog(cc_bool enabled) {
 	if (FOG_ENABLED == enabled) return;
 	
 	FOG_ENABLED = enabled;
-	STATE_DIRTY = GL_TRUE;
+	STATE_DIRTY = true;
 }
 
 void Gfx_SetFogCol(PackedCol color) {
@@ -489,36 +506,34 @@ cc_bool Gfx_WarnIfNecessary(void) {
 /*########################################################################################################################*
 *----------------------------------------------------------Drawing--------------------------------------------------------*
 *#########################################################################################################################*/
-#define VB_PTR gfx_vertices
-static const void* VERTEX_PTR;
-extern void apply_poly_header(PolyHeader* header, PolyList* activePolyList);
+extern void apply_poly_header(pvr_poly_hdr_t* header, int list_type);
 
 extern Vertex* DrawColouredQuads(const void* src, Vertex* dst, int numQuads);
 extern Vertex* DrawTexturedQuads(const void* src, Vertex* dst, int numQuads);
 
-void DrawQuads(int count) {
+void DrawQuads(int count, void* src) {
 	if (!count) return;
 	PolyList* output = _glActivePolyList();
-	AlignedVectorHeader* hdr = &output->vector.hdr;
+	AlignedVector* vec = &output->vector;
 
-	uint32_t header_required = (hdr->size == 0) || STATE_DIRTY;
+	uint32_t header_required = (vec->size == 0) || STATE_DIRTY;
 	// Reserve room for the vertices and header
-	Vertex* beg = aligned_vector_reserve(&output->vector, hdr->size + (header_required) + count);
+	Vertex* beg = aligned_vector_reserve(&output->vector, vec->size + (header_required) + count);
 
 	if (header_required) {
-		apply_poly_header((PolyHeader*)beg, output);
-		STATE_DIRTY = GL_FALSE;
+		apply_poly_header((pvr_poly_hdr_t*)beg, output->list_type);
+		STATE_DIRTY = false;
 		beg++; 
-		hdr->size += 1;
+		vec->size += 1;
 	}
 	Vertex* end;
 
 	if (TEXTURES_ENABLED) {
-		end = DrawTexturedQuads(VERTEX_PTR, beg, count >> 2);
+		end = DrawTexturedQuads(src, beg, count >> 2);
 	} else {
-		end = DrawColouredQuads(VERTEX_PTR, beg, count >> 2);
+		end = DrawColouredQuads(src, beg, count >> 2);
 	}
-	hdr->size += (end - beg);
+	vec->size += (end - beg);
 }
 
 void Gfx_SetVertexFormat(VertexFormat fmt) {
@@ -527,7 +542,7 @@ void Gfx_SetVertexFormat(VertexFormat fmt) {
 	gfx_stride = strideSizes[fmt];
 
 	TEXTURES_ENABLED = fmt == VERTEX_FORMAT_TEXTURED;
-	STATE_DIRTY      = GL_TRUE;
+	STATE_DIRTY      = true;
 }
 
 void Gfx_DrawVb_Lines(int verticesCount) {
@@ -536,28 +551,27 @@ void Gfx_DrawVb_Lines(int verticesCount) {
 }
 
 void Gfx_DrawVb_IndexedTris_Range(int verticesCount, int startVertex) {
+	void* src;
 	if (gfx_format == VERTEX_FORMAT_TEXTURED) {
-		VERTEX_PTR = gfx_vertices + startVertex * SIZEOF_VERTEX_TEXTURED;
+		src = gfx_vertices + startVertex * SIZEOF_VERTEX_TEXTURED;
 	} else {
-		VERTEX_PTR = gfx_vertices + startVertex * SIZEOF_VERTEX_COLOURED;
+		src = gfx_vertices + startVertex * SIZEOF_VERTEX_COLOURED;
 	}
 
-	DrawQuads(verticesCount);
+	DrawQuads(verticesCount, src);
 }
 
 void Gfx_DrawVb_IndexedTris(int verticesCount) {
-	VERTEX_PTR = gfx_vertices;
-
 	if (textureOffset) ShiftTextureCoords(verticesCount);
-	DrawQuads(verticesCount);
+	DrawQuads(verticesCount, gfx_vertices);
 	if (textureOffset) UnshiftTextureCoords(verticesCount);
 }
 
 void Gfx_DrawIndexedTris_T2fC4b(int verticesCount, int startVertex) {
 	if (renderingDisabled) return;
 	
-	VERTEX_PTR = gfx_vertices + startVertex * SIZEOF_VERTEX_TEXTURED;
-	DrawQuads(verticesCount);
+	void* src = gfx_vertices + startVertex * SIZEOF_VERTEX_TEXTURED;
+	DrawQuads(verticesCount, src);
 }
 
 
@@ -569,8 +583,8 @@ cc_result Gfx_TakeScreenshot(struct Stream* output) {
 }
 
 void Gfx_GetApiInfo(cc_string* info) {
-	GLint freeMem = _glFreeTextureMemory();
-	GLint usedMem = _glUsedTextureMemory();
+	int freeMem = _glFreeTextureMemory();
+	int usedMem = _glUsedTextureMemory();
 	
 	float freeMemMB = freeMem / (1024.0 * 1024.0);
 	float usedMemMB = usedMem / (1024.0 * 1024.0);
@@ -582,9 +596,8 @@ void Gfx_GetApiInfo(cc_string* info) {
 	PrintMaxTextureInfo(info);
 }
 
-void Gfx_SetFpsLimit(cc_bool vsync, float minFrameMs) {
-	gfx_minFrameMs = minFrameMs;
-	gfx_vsync      = vsync;
+void Gfx_SetVSync(cc_bool vsync) {
+	gfx_vsync = vsync;
 }
 
 void Gfx_BeginFrame(void) { }
@@ -597,7 +610,6 @@ void Gfx_ClearBuffers(GfxBuffers buffers) {
 void Gfx_EndFrame(void) {
 	pvr_wait_ready();
 	glKosSwapBuffers();
-	if (gfx_minFrameMs) LimitFPS();
 }
 
 void Gfx_OnWindowResize(void) {
@@ -609,21 +621,40 @@ extern float VP_COL_HHEIGHT, VP_TEX_HHEIGHT;
 extern float VP_COL_X_PLUS_HWIDTH,  VP_TEX_X_PLUS_HWIDTH;
 extern float VP_COL_Y_PLUS_HHEIGHT, VP_TEX_Y_PLUS_HHEIGHT;
 
-void Gfx_SetViewport(int x, int y, int w, int h) {
-	if (x == 0 && y == 0 && w == Game.Width && h == Game.Height) {
-		SCISSOR_TEST_ENABLED = GL_FALSE;
-	} else {
-		SCISSOR_TEST_ENABLED = GL_TRUE;
-	}
-	STATE_DIRTY = GL_TRUE;
-	
-	glViewport(x, y, w, h);
-	glScissor (x, y, w, h);
+static void PushCommand(void* cmd) {
+    aligned_vector_push_back(&OP_LIST.vector, cmd, 1);
+    aligned_vector_push_back(&PT_LIST.vector, cmd, 1);
+    aligned_vector_push_back(&TR_LIST.vector, cmd, 1);
+}
 
+void Gfx_SetViewport(int x, int y, int w, int h) {
 	VP_COL_HWIDTH  = VP_TEX_HWIDTH  = w *  0.5f;
 	VP_COL_HHEIGHT = VP_TEX_HHEIGHT = h * -0.5f;
 
 	VP_COL_X_PLUS_HWIDTH  = VP_TEX_X_PLUS_HWIDTH  = x + w * 0.5f;
 	VP_COL_Y_PLUS_HHEIGHT = VP_TEX_Y_PLUS_HHEIGHT = y + h * 0.5f;
+
+	Vertex c;
+	c.flags = PVR_CMD_USERCLIP | 0x23;
+	c.x = w *  0.5f; // hwidth
+	c.y = h * -0.5f; // hheight
+	c.z = x + w * 0.5f; // x_plus_hwidth
+	c.w = y + h * 0.5f; // y_plus_hheight
+	PushCommand(&c);
+}
+
+void Gfx_SetScissor(int x, int y, int w, int h) {
+	SCISSOR_TEST_ENABLED = x != 0 || y != 0 || w != Game.Width || h != Game.Height;
+	STATE_DIRTY = true;
+
+	pvr_poly_hdr_t c;
+	c.cmd = PVR_CMD_USERCLIP;
+	c.mode1 = c.mode2 = c.mode3 = 0;
+
+	c.d1 = x >> 5;
+	c.d2 = y >> 5;
+	c.d3 = ((x + w) >> 5) - 1;
+	c.d4 = ((y + h) >> 5) - 1;
+	PushCommand(&c);
 }
 #endif

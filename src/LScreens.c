@@ -21,8 +21,7 @@
 #include "Game.h"
 
 #define LAYOUTS static const struct LLayout
-#define IsEnterButton(btn) (btn == CCKEY_ENTER  || btn == CCPAD_START  || btn == CCPAD_A || btn == CCKEY_KP_ENTER)
-#define IsBackButton(btn)  (btn == CCKEY_ESCAPE || btn == CCPAD_SELECT || btn == CCPAD_B)
+#define IsBackButton(btn) (btn == CCKEY_ESCAPE || btn == CCPAD_SELECT || btn == CCPAD_B)
 
 /*########################################################################################################################*
 *---------------------------------------------------------Screen base-----------------------------------------------------*
@@ -85,7 +84,7 @@ static void LScreen_CycleSelected(struct LScreen* s, int dir) {
 }
 
 static void LScreen_KeyDown(struct LScreen* s, int key, cc_bool was) {
-	if (IsEnterButton(key)) {
+	if (Input_IsEnterButton(key)) {
 		/* Shouldn't multi click when holding down Enter */
 		if (was) return;
 
@@ -373,12 +372,13 @@ static void ColoursScreen_AdjustSelected(struct LScreen* s, int delta) {
 }
 
 static void ColoursScreen_KeyDown(struct LScreen* s, int key, cc_bool was) {
-	int delta = Input_CalcDelta(key, 1, 10);
-	if (key == CCWHEEL_UP)   delta = +1;
-	if (key == CCWHEEL_DOWN) delta = -1;
+	int deltaX, deltaY;
+	Input_CalcDelta(key, &deltaX, &deltaY);
+	if (key == CCWHEEL_UP)   deltaX = +1;
+	if (key == CCWHEEL_DOWN) deltaX = -1;
 	
-	if (delta) {
-		ColoursScreen_AdjustSelected(s, delta);
+	if (deltaX || deltaY) {
+		ColoursScreen_AdjustSelected(s, deltaY * 10 + deltaX);
 	} else {
 		LScreen_KeyDown(s, key, was);
 	}

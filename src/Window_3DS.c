@@ -19,8 +19,8 @@ static u16 top_width, top_height;
 static u16 btm_width, btm_height;
 
 struct _DisplayData DisplayInfo;
-struct _WindowData WindowInfo;
-struct _WindowData Window_Alt;
+struct cc_window WindowInfo;
+struct cc_window Window_Alt;
 cc_bool launcherTop;
 
 void Window_PreInit(void) {
@@ -41,10 +41,13 @@ void Window_Init(void) {
 	DisplayInfo.ScaleX = 0.5f;
 	DisplayInfo.ScaleY = 0.5f;
 	
-	Window_Main.Width   = top_width;
-	Window_Main.Height  = top_height;
-	Window_Main.Focused = true;
-	Window_Main.Exists  = true;
+	Window_Main.Width    = top_width;
+	Window_Main.Height   = top_height;
+	Window_Main.Focused  = true;
+	
+	Window_Main.Exists   = true;
+	Window_Main.UIScaleX = DEFAULT_UI_SCALE_X;
+	Window_Main.UIScaleY = DEFAULT_UI_SCALE_Y;
 
 	Window_Main.SoftKeyboard = SOFT_KEYBOARD_RESIZE;
 	Input_SetTouchMode(true);
@@ -257,6 +260,7 @@ void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) {
 	} else if (mode == KEYBOARD_TYPE_NUMBER) {
 		swkbdSetNumpadKeys(&swkbd, '-', '.');
 	}
+	DisplayInfo.ShowingSoftKeyboard = true;
 	
 	if (mode == KEYBOARD_TYPE_PASSWORD)
 		swkbdSetPasswordMode(&swkbd, SWKBD_PASSWORD_HIDE_DELAY);
@@ -271,7 +275,11 @@ void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) {
 void OnscreenKeyboard_SetText(const cc_string* text) { }
 void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) { }
 void OnscreenKeyboard_Draw3D(void) { }
-void OnscreenKeyboard_Close(void) { /* TODO implement */ }
+
+void OnscreenKeyboard_Close(void) { 
+	DisplayInfo.ShowingSoftKeyboard = false;
+	/* TODO implement */ 
+}
 
 
 /*########################################################################################################################*

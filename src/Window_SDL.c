@@ -9,7 +9,6 @@
 #include <SDL2/SDL.h>
 
 static SDL_Window* win_handle;
-#warning "Some features are missing from the SDL backend. If possible, it is recommended that you use a native windowing backend instead"
 
 #ifdef CC_BUILD_OS2
 #define INCL_PM
@@ -76,7 +75,7 @@ void Window_Free(void) { }
 #include "../misc/sdl/CCIcon_SDL.h"
 
 static void ApplyIcon(void) {
-	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(CCIcon_Data, CCIcon_Width, CCIcon_Height, 32, CCIcon_Pitch,
+	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom((void*)CCIcon_Data, CCIcon_Width, CCIcon_Height, 32, CCIcon_Pitch,
 													0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
 	SDL_SetWindowIcon(win_handle, surface);
 }
@@ -90,8 +89,12 @@ static void DoCreateWindow(int width, int height, int flags) {
 	if (!win_handle) Window_SDLFail("creating window");
 
 	RefreshWindowBounds();
-	Window_Main.Exists = true;
-	Window_Main.Handle = win_handle;
+	Window_Main.Exists     = true;
+	Window_Main.Handle.ptr = win_handle;
+	Window_Main.UIScaleX   = DEFAULT_UI_SCALE_X;
+	Window_Main.UIScaleY   = DEFAULT_UI_SCALE_Y;
+
+	Window_Main.SoftKeyboardInstant = true;
 	ApplyIcon();
 	/* TODO grab using SDL_SetWindowGrab? seems to be unnecessary on Linux at least */
 }
@@ -500,7 +503,7 @@ cc_bool GLContext_SwapBuffers(void) {
 	return true;
 }
 
-void GLContext_SetFpsLimit(cc_bool vsync, float minFrameMs) {
+void GLContext_SetVSync(cc_bool vsync) {
 	SDL_GL_SetSwapInterval(vsync);
 }
 void GLContext_GetApiInfo(cc_string* info) { }

@@ -136,7 +136,7 @@ static cc_bool deviceCreated;
 static void TryCreateDevice(void) {
 	cc_result res;
 	D3DCAPS9 caps;
-	HWND winHandle = (HWND)Window_Main.Handle;
+	HWND winHandle = (HWND)Window_Main.Handle.ptr;
 	D3DPRESENT_PARAMETERS args = { 0 };
 	D3D9_FillPresentArgs(&args);
 
@@ -818,8 +818,7 @@ static void UpdateSwapchain(const char* reason) {
 	Gfx_LoseContext(reason);
 }
 
-void Gfx_SetFpsLimit(cc_bool vsync, float minFrameMs) {
-	gfx_minFrameMs = minFrameMs;
+void Gfx_SetVSync(cc_bool vsync) {
 	if (gfx_vsync == vsync) return;
 
 	gfx_vsync = vsync;
@@ -848,7 +847,6 @@ void Gfx_EndFrame(void) {
 		/* TODO: Make sure this actually works on all graphics cards. */
 		Gfx_LoseContext(" (Direct3D9 device lost)");
 	}
-	if (gfx_minFrameMs) LimitFPS();
 }
 
 cc_bool Gfx_WarnIfNecessary(void) { return false; }
@@ -881,5 +879,26 @@ void Gfx_OnWindowResize(void) {
 	UpdateSwapchain(" (resizing window)");
 }
 
-void Gfx_SetViewport(int x, int y, int w, int h) { }
+void Gfx_SetViewport(int x, int y, int w, int h) {
+	D3DVIEWPORT9 vp;
+	vp.X      = x;
+	vp.Y      = y;
+	vp.Width  = w;
+	vp.Height = h;
+	vp.MinZ   = 0.0f;
+	vp.MaxZ   = 1.0f;
+	IDirect3DDevice9_SetViewport(device, &vp);
+}
+
+void Gfx_SetScissor(int x, int y, int w, int h) {
+	cc_bool enabled = x != 0 || y != 0 || w != Game.Width || h != Game.Height;
+	RECT rect;
+	rect.left   = x;
+	rect.top    = y;
+	rect.right  = x + w;
+	rect.bottom = y + h;
+
+	IDirect3DDevice9_SetRenderState(device, D3DRS_SCISSORTESTENABLE, enabled);
+	IDirect3DDevice9_SetScissorRect(device, &rect);
+}
 #endif

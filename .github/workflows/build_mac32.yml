@@ -1,29 +1,38 @@
 name: Build latest (macOS 32 bit)
-on: [push]
+# trigger via either push to selected branches or on manual run
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.ref }}-mac32-legacy
+  group: ${{ github.ref }}-mac32
   cancel-in-progress: true
 
 jobs:
   build:
-    if: github.ref_name == github.event.repository.default_branch
-    runs-on: macOS-12
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/classicube/minimal-osxcross:latest
+      credentials:
+        username: UnknownShadow200
+        password: ${{ secrets.GHCR_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
-      - name: Compile 64 bit macOS builds
+      - name: Compile 32 bit macOS builds
         shell: bash
         id: compile
         env: 
-          COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn"
-          MAC64_FLAGS:  "-fvisibility=hidden -rdynamic -DCC_BUILD_ICON -arch i386"
+          COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn -fvisibility=hidden -rdynamic -DCC_BUILD_ICON"
         run: |
-          sudo xcode-select --switch /Applications/Xcode_13.1.app
-          LATEST_FLAG=-DCC_COMMIT_SHA=\"$(git rev-parse --short "$GITHUB_SHA")\"  
-          
+          LATEST_FLAG=-DCC_COMMIT_SHA=\"${GITHUB_SHA::9}\"
+ 
           cd src
-          clang *.c interop_cocoa.m ${{ env.COMMON_FLAGS }} ${{ env.MAC64_FLAGS }} $LATEST_FLAG -o cc-mac32-gl1 -framework Cocoa -framework OpenGL -framework IOKit -lobjc
-          clang *.c interop_cocoa.m ${{ env.COMMON_FLAGS }} ${{ env.MAC64_FLAGS }} $LATEST_FLAG -DCC_BUILD_GLMODERN -o cc-mac32-gl2 -framework Cocoa -framework OpenGL -framework IOKit -lobjc
+          PATH=$PATH:/usr/local/compiler/target/bin
+          i386-apple-darwin8-clang *.c Window_cocoa.m ${{ env.COMMON_FLAGS }} $LATEST_FLAG -o cc-mac32-gl1 -framework Cocoa -framework OpenGL -framework IOKit -lobjc -lgcc_s.1
+          i386-apple-darwin8-clang *.c Window_cocoa.m ${{ env.COMMON_FLAGS }} $LATEST_FLAG -DCC_GFX_BACKEND=CC_GFX_BACKEND_GL2 -o cc-mac32-gl2 -framework Cocoa -framework OpenGL -framework IOKit -lobjc -lgcc_s.1
 
 
       - uses: ./.github/actions/notify_failure
@@ -37,10 +46,10 @@ jobs:
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'src/cc-mac32-gl1'
-          DEST_NAME: 'ClassiCube-mac32'
+          DEST_NAME: 'ClassiCube-mac32-Intel'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'src/cc-mac32-gl2'
-          DEST_NAME: 'ClassiCube-mac32-ModernGL'
+          DEST_NAME: 'ClassiCube-mac32-Intel-ModernGL'

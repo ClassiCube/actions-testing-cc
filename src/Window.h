@@ -57,6 +57,8 @@ CC_VAR extern struct _DisplayData {
 	int Width, Height;
 	/* Whether accounting for system DPI scaling is enabled */
 	cc_bool DPIScaling;
+	/* Whether the soft keyboard is currently being shown */
+	cc_bool ShowingSoftKeyboard;
 	/* Amount to offset content near the edges of the window by */
 	/*  Mainly intended for when the game is rendered on TV displays, where */
 	/*  pixels on the edges of the screen may be hidden due to overscan */
@@ -69,9 +71,9 @@ static CC_INLINE int Display_ScaleX(int x) { return (int)(x * DisplayInfo.ScaleX
 static CC_INLINE int Display_ScaleY(int y) { return (int)(y * DisplayInfo.ScaleY); }
 
 /* Data for a window */
-struct _WindowData {
+struct cc_window {
 	/* Readonly platform-specific handle to the window. */
-	void* Handle;
+	cc_pointer Handle;
 	/* Size of the content area of the window. (i.e. area that can draw to) */
 	/* This area does NOT include borders and titlebar surrounding the window. */
 	int Width, Height;
@@ -86,13 +88,22 @@ struct _WindowData {
 	cc_bool Inactive;
 	/* Whether input should be ignored due to soft keyboard being open */
 	cc_bool SoftKeyboardFocus;
+	/* Whether on-screen keyboard should be instantly opened when an input field is selected */
+	/* Otherwise, the on-screen keyboard is only opened when the input field is clicked */
+	cc_uint8 SoftKeyboardInstant;
+	/* Scale factors specifically for some in-game elements (e.g. chat) */
+	/*  that vary their elements based on the window dimensions */
+	float UIScaleX, UIScaleY;
 };
 
+#define DEFAULT_UI_SCALE_X (1.0f / 640)
+#define DEFAULT_UI_SCALE_Y (1.0f / 480)
+
 /* Data for the game/launcher window */
-CC_VAR extern struct _WindowData WindowInfo; /* Named WindowInfo for backwards compatibility */
+CC_VAR extern struct cc_window WindowInfo; /* Named WindowInfo for backwards compatibility */
 #define Window_Main WindowInfo
 /* Data for alternate game window (e.g. 3DS) */
-extern struct _WindowData Window_Alt;
+extern struct cc_window Window_Alt;
 
 /* Initialises necessary state before initing platform and loading options */
 void Window_PreInit(void);
@@ -238,7 +249,7 @@ void* GLContext_GetAddress(const char* function);
 cc_bool GLContext_SwapBuffers(void);
 /* Sets whether synchronisation with the monitor is enabled. */
 /* NOTE: The implementation may choose to still ignore this. */
-void GLContext_SetFpsLimit(cc_bool vsync, float minFrameMs);
+void GLContext_SetVSync(cc_bool vsync);
 /* Gets OpenGL context specific graphics information. */
 void GLContext_GetApiInfo(cc_string* info);
 #endif

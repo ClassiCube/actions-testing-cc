@@ -1927,7 +1927,7 @@ static void LoadingScreen_Render(void* screen, float delta) {
 	offset = 0;
 	if (s->rows) {
 		loc = Block_Tex(BLOCK_DIRT, FACE_YMAX);
-		Gfx_BindTexture(Atlas1D.TexIds[Atlas1D_Index(loc)]);
+		Atlas1D_Bind(Atlas1D_Index(loc));
 		Gfx_DrawVb_IndexedTris(s->rows * 4);
 		offset = s->rows * 4;
 	}
@@ -2126,8 +2126,7 @@ static void DisconnectScreen_Init(void* screen) {
 	ButtonWidget_Add(s, &s->quit,      300, DisconnectScreen_OnQuit);
 	if (!s->canReconnect) s->reconnect.flags = WIDGET_FLAG_DISABLED;
 
-	/* NOTE: changing VSync can't be done within frame, causes crash on some GPUs */
-	Gfx_SetFpsLimit(Game_FpsLimit == FPS_LIMIT_VSYNC, 1000 / 5.0f);
+	Game_SetMinFrameTime(1000 / 5.0f);
 
 	s->initTime     = Game.Time;
 	s->lastSecsLeft = DISCONNECT_DELAY_SECS;

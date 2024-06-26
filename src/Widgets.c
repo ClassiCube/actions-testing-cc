@@ -964,12 +964,12 @@ static int TableWidget_PointerMove(void* widget, int id, int x, int y) {
 
 static int TableWidget_KeyDown(void* widget, int key) {
 	struct TableWidget* w = (struct TableWidget*)widget;
-	int delta;
+	int deltaX, deltaY;
 	if (w->selectedIndex == -1) return false;
 
-	delta = Input_CalcDelta(key, 1, w->blocksPerRow);
-	if (delta) {
-		TableWidget_ScrollRelative(w, delta);
+	Input_CalcDelta(key, &deltaX, &deltaY);
+	if (deltaX || deltaY) {
+		TableWidget_ScrollRelative(w, deltaX + deltaY * w->blocksPerRow);
 		return true;
 	}
 	return false;
@@ -1677,14 +1677,30 @@ static cc_bool TextInputWidget_AllowedChar(void* widget, char c) {
 	return valid;
 }
 
-static int TextInputWidget_PointerDown(void* widget, int id, int x, int y) {
-	struct TextInputWidget* w = (struct TextInputWidget*)widget;
+void TextInputWidget_OpenKeyboard(struct TextInputWidget* w) {
 	struct OpenKeyboardArgs args;
 
 	OpenKeyboardArgs_Init(&args, &w->base.text, w->onscreenType);
 	args.placeholder = w->onscreenPlaceholder;
 	OnscreenKeyboard_Open(&args);
+}
 
+static int TextInputWidget_KeyDown(void* widget, int key) {
+	struct TextInputWidget* w  = (struct TextInputWidget*)widget;
+	struct MenuInputDesc* desc = &w->desc;
+
+	if (Window_Main.SoftKeyboard && !DisplayInfo.ShowingSoftKeyboard && Input_IsEnterButton(key)) { 
+		TextInputWidget_OpenKeyboard(w); return true; 
+	}
+	if (InputWidget_KeyDown(&w->base, key)) return true;
+
+	return desc->VTABLE->ProcessInput(desc, &w->base.text, key);
+}
+
+static int TextInputWidget_PointerDown(void* widget, int id, int x, int y) {
+	struct TextInputWidget* w = (struct TextInputWidget*)widget;
+
+	TextInputWidget_OpenKeyboard(w);
 	w->base.showCaret = true;
 	return InputWidget_PointerDown(widget, id, x, y);
 }
@@ -1692,7 +1708,7 @@ static int TextInputWidget_PointerDown(void* widget, int id, int x, int y) {
 static int TextInputWidget_GetMaxLines(void) { return 1; }
 static const struct WidgetVTABLE TextInputWidget_VTABLE = {
 	TextInputWidget_Render,      InputWidget_Free, InputWidget_Reposition,
-	InputWidget_KeyDown,         Widget_InputUp,   Widget_MouseScroll,
+	TextInputWidget_KeyDown,     Widget_InputUp,   Widget_MouseScroll,
 	TextInputWidget_PointerDown, Widget_PointerUp, Widget_PointerMove,
 	TextInputWidget_BuildMesh,   TextInputWidget_Render2, TextInputWidget_MaxVertices
 };

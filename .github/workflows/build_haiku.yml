@@ -1,5 +1,11 @@
 name: Build latest (Haiku)
-on: [push]
+# trigger via either push to selected branches or on manual run
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.ref }}-haiku
@@ -7,7 +13,6 @@ concurrency:
 
 jobs:
   build-haiku:
-    if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     container:
       image: haiku/cross-compiler:x86_64-r1beta4
@@ -19,7 +24,7 @@ jobs:
           COMMON_FLAGS: "-O1 -s -fno-stack-protector -fno-math-errno -Qn"
         run: |
           cd src        
-          x86_64-unknown-haiku-gcc *.c interop_BeOS.cpp -o ClassiCube-haiku ${{ env.COMMON_FLAGS }} -lm -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
+          x86_64-unknown-haiku-gcc *.c Platform_BeOS.cpp Window_BeOS.cpp -o ClassiCube-haiku ${{ env.COMMON_FLAGS }} -lm -lGL -lnetwork -lstdc++ -lbe -lgame -ltracker
           
 
       - uses: ./.github/actions/notify_failure

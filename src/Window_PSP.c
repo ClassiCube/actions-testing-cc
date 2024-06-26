@@ -22,7 +22,7 @@
 static cc_bool launcherMode;
 
 struct _DisplayData DisplayInfo;
-struct _WindowData WindowInfo;
+struct cc_window WindowInfo;
 
 void Window_PreInit(void) {
 	sceCtrlSetSamplingCycle(0);
@@ -35,10 +35,14 @@ void Window_Init(void) {
 	DisplayInfo.ScaleX = 1;
 	DisplayInfo.ScaleY = 1;
 	
-	Window_Main.Width   = SCREEN_WIDTH;
-	Window_Main.Height  = SCREEN_HEIGHT;
-	Window_Main.Focused = true;
-	Window_Main.Exists  = true;
+	Window_Main.Width    = SCREEN_WIDTH;
+	Window_Main.Height   = SCREEN_HEIGHT;
+	Window_Main.Focused  = true;
+	
+	Window_Main.Exists   = true;
+	Window_Main.UIScaleX = DEFAULT_UI_SCALE_X;
+	Window_Main.UIScaleY = DEFAULT_UI_SCALE_Y;
+	Window_Main.SoftKeyboard   = SOFT_KEYBOARD_VIRTUAL;
 
 	Input.Sources = INPUT_SOURCE_GAMEPAD;
 	sceDisplaySetMode(0, SCREEN_WIDTH, SCREEN_HEIGHT);

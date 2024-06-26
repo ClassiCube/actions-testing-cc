@@ -139,7 +139,7 @@ typedef cc_uint8  cc_bool;
 #define CC_GFX_BACKEND_VULKAN    0x0081
 
 #define CC_BUILD_NETWORKING
-//#define CC_BUILD_FREETYPE
+#undef CC_BUILD_FREETYPE
 #define CC_BUILD_RESOURCES
 #define CC_BUILD_PLUGINS
 #define CC_BUILD_ANIMATIONS
@@ -368,6 +368,7 @@ typedef cc_uint8  cc_bool;
 	#define CC_BUILD_COOPTHREADED
 	#define CC_BUILD_OPENAL
 	#define CC_BUILD_HTTPCLIENT
+	#define CC_BUILD_SPLITSCREEN
 #elif defined PLAT_NDS
 	#define CC_BUILD_NDS
 	#define CC_BUILD_CONSOLE
@@ -470,6 +471,7 @@ typedef cc_uint8 EntityID;
 typedef cc_uint8 Face;
 typedef cc_uint32 cc_result;
 typedef cc_uint64 TimeMS;
+typedef union cc_pointer_ { cc_uintptr val; void* ptr; } cc_pointer;
 
 typedef struct Rect2D_  { int x, y, width, height; } Rect2D;
 typedef struct TextureRec_ { float u1, v1, u2, v2; } TextureRec;

@@ -1,6 +1,8 @@
 // Silence deprecation warnings on modern iOS
 #define GLES_SILENCE_DEPRECATION
+#include "Core.h"
 
+#if defined CC_BUILD_IOS
 #include "_WindowBase.h"
 #include "Bitmap.h"
 #include "Input.h"
@@ -470,9 +472,13 @@ static CGRect DoCreateWindow(void) {
     
     win_handle.rootViewController = cc_controller;
     win_handle.backgroundColor = CalcBackgroundColor();
-    Window_Main.Exists = true;
+    Window_Main.Exists   = true;
+    Window_Main.UIScaleX = DEFAULT_UI_SCALE_X;
+    Window_Main.UIScaleY = DEFAULT_UI_SCALE_Y;
+
     Window_Main.Width  = bounds.size.width;
     Window_Main.Height = bounds.size.height;
+	Window_Main.SoftKeyboardInstant = true;
     
     NSNotificationCenter* notifications = NSNotificationCenter.defaultCenter;
     [notifications addObserver:cc_controller selector:@selector(keyboardDidShow:) name:UIKeyboardWillShowNotification object:nil];
@@ -564,6 +570,7 @@ void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) {
         kb_controller = [[CCKBController alloc] init];
         CFBridgingRetain(kb_controller); // prevent GC TODO even needed?
     }
+	DisplayInfo.ShowingSoftKeyboard = true;
     
     text_input = [[UITextField alloc] initWithFrame:CGRectZero];
     text_input.hidden   = YES;
@@ -590,6 +597,7 @@ void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) { }
 void OnscreenKeyboard_Draw3D(void) { }
 
 void OnscreenKeyboard_Close(void) {
+	DisplayInfo.ShowingSoftKeyboard = false;
     [text_input resignFirstResponder];
 }
 
@@ -668,11 +676,10 @@ cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* args) {
     // UIDocumentPickerViewController - iOS 8.0
     
     // save the item to a temp file, which is then (usually) later deleted by picker callbacks
-    cc_string tmpDir = String_FromConst("Exported");
-    Directory_Create(&tmpDir);
+    Directory_Create(FILEPATH_RAW("Exported"));
     
     save_path.length = 0;
-    String_Format3(&save_path, "%s/%s%c", &tmpDir, &args->defaultName, args->filters[0]);
+    String_Format2(&save_path, "Exported/%s%c", &args->defaultName, args->filters[0]);
     args->Callback(&save_path);
     
     NSString* str = ToNSString(&save_path);
@@ -814,7 +821,7 @@ cc_bool GLContext_SwapBuffers(void) {
     [ctx_handle presentRenderbuffer:GL_RENDERBUFFER];
     return true;
 }
-void GLContext_SetFpsLimit(cc_bool vsync, float minFrameMs) { }
+void GLContext_SetVSync(cc_bool vsync) { }
 void GLContext_GetApiInfo(cc_string* info) { }
 
 
@@ -871,9 +878,6 @@ cc_result Updater_SetNewBuildTime(cc_uint64 t) { return ERR_NOT_SUPPORTED; }
 /*########################################################################################################################*
  *--------------------------------------------------------Platform--------------------------------------------------------*
  *#########################################################################################################################*/
-static char gameArgs[GAME_MAX_CMDARGS][STRING_SIZE];
-static int gameNumArgs;
-
 cc_result Process_StartOpen(const cc_string* args) {
     // openURL - iOS 2.0 (deprecated)
     NSString* str = ToNSString(args);
@@ -881,28 +885,6 @@ cc_result Process_StartOpen(const cc_string* args) {
 
     [UIApplication.sharedApplication openURL:url];
     return 0;
-}
-
-cc_result Process_StartGame2(const cc_string* args, int numArgs) {
-    for (int i = 0; i < numArgs; i++)
-    {
-        String_CopyToRawArray(gameArgs[i], &args[i]);
-    }
-
-    gameNumArgs = numArgs;
-    return 0;
-}
-
-int Platform_GetCommandLineArgs(int argc, STRING_REF char** argv, cc_string* args) {
-    int count = gameNumArgs;
-    for (int i = 0; i < count; i++)
-    {
-        args[i] = String_FromRawArray(gameArgs[i]);
-    }
-
-    // clear arguments so after game is closed, launcher is started
-    gameNumArgs = 0;
-    return count;
 }
 
 cc_result Platform_SetDefaultCurrentDirectory(int argc, char **argv) {
@@ -1844,3 +1826,4 @@ void LBackend_CloseScreen(struct LScreen* s) {
         [view removeFromSuperview];
     }
 }
+#endif

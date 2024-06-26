@@ -378,8 +378,10 @@ static void DoCreateWindow(int width, int height) {
 	AEInstallEventHandler(kCoreEventClass, kAEQuitApplication,
 		NewAEEventHandlerUPP(HandleQuitMessage), 0, false);
 	
-	Window_Main.Exists = true;
-	Window_Main.Handle = winHandle;
+	Window_Main.Exists     = true;
+	Window_Main.Handle.ptr = winHandle;
+	Window_Main.UIScaleX   = DEFAULT_UI_SCALE_X;
+	Window_Main.UIScaleY   = DEFAULT_UI_SCALE_Y;
 	// CGAssociateMouseAndMouseCursorPosition implicitly grabs cursor
 
 	del = [CCWindowDelegate alloc];
@@ -836,7 +838,7 @@ cc_bool GLContext_SwapBuffers(void) {
 	return true;
 }
 
-void GLContext_SetFpsLimit(cc_bool vsync, float minFrameMs) {
+void GLContext_SetVSync(cc_bool vsync) {
 	int value = vsync ? 1 : 0;
 	[ctxHandle setValues:&value forParameter: NSOpenGLCPSwapInterval];
 }
@@ -866,8 +868,9 @@ void GLContext_GetApiInfo(cc_string* info) {
 	GLinteger nRenders = 0;
 	CGLRendererInfoObj rend;
 	CGLQueryRendererInfo(-1, &rend, &nRenders);
+	int i;
 	
-	for (int i = 0; i < nRenders; i++)
+	for (i = 0; i < nRenders; i++)
 	{
 		GLinteger curID = -1;
 		CGLDescribeRenderer(rend, i, kCGLRPRendererID, &curID);

@@ -26,6 +26,9 @@ static PackedCol clear_color;
 static vdp1_cmdt_t cmdts_all[CMDS_COUNT];
 static int cmdts_count;
 static vdp1_vram_partitions_t _vdp1_vram_partitions;
+static void* tex_vram_addr;
+static void* tex_vram_cur;
+static cc_uint32* gourad_base;
 
 static vdp1_cmdt_t* NextPrimitive(void) {
 	if (cmdts_count >= CMDS_COUNT) Logger_Abort("Too many VDP1 commands");
@@ -33,10 +36,12 @@ static vdp1_cmdt_t* NextPrimitive(void) {
 }
 
 static const vdp1_cmdt_draw_mode_t color_draw_mode = {
-	.raw = 0x0000
+	.cc_mode = VDP1_CMDT_CC_REPLACE,
+        .color_mode = VDP1_CMDT_CM_RGB_32768
 };
 static const vdp1_cmdt_draw_mode_t texture_draw_mode = {
-    .cc_mode = PRIMITIVE_DRAW_MODE_GOURAUD_SHADING
+	.cc_mode = VDP1_CMDT_CC_GOURAUD,
+	.color_mode = VDP1_CMDT_CM_RGB_32768
 };
 
 static void UpdateVDP1Env(void) {
@@ -72,10 +77,12 @@ static GfxResourceID white_square;
 void Gfx_RestoreState(void) {
 	InitDefaultResources();
 	
-	// 2x2 dummy white texture
 	struct Bitmap bmp;
-	BitmapCol pixels[4] = { BitmapColor_RGB(255, 0, 0), BITMAPCOLOR_WHITE, BITMAPCOLOR_WHITE, BITMAPCOLOR_WHITE };
-	Bitmap_Init(bmp, 2, 2, pixels);
+	BitmapCol pixels[8 * 8];
+	Mem_Set(pixels, 0xFF, sizeof(pixels));
+	pixels[0] = BitmapColor_RGB(255, 0, 0);
+
+	Bitmap_Init(bmp, 8, 8, pixels);
 	white_square = Gfx_CreateTexture(&bmp, 0, false);
 }
 
@@ -92,14 +99,18 @@ void Gfx_Create(void) {
             RGB1555(1, 0, 3, 15));
         vdp2_sprite_priority_set(0, 6);
 
+		tex_vram_addr = _vdp1_vram_partitions.texture_base;
+		tex_vram_cur  = _vdp1_vram_partitions.texture_base;
+		gourad_base   = _vdp1_vram_partitions.gouraud_base;
+
 		UpdateVDP1Env();
 		CalcGouraudColours();
 	}
 
 	Gfx.MinTexWidth  =  8;
 	Gfx.MinTexHeight =  8;
-	Gfx.MaxTexWidth  = 128;
-	Gfx.MaxTexHeight = 128;
+	Gfx.MaxTexWidth  =  8; // 128
+	Gfx.MaxTexHeight =  8; // 128
 	Gfx.Created      = true;
 }
 
@@ -112,35 +123,57 @@ void Gfx_Free(void) {
 *---------------------------------------------------------Textures--------------------------------------------------------*
 *#########################################################################################################################*/
 #define BGRA8_to_SATURN(src) \
-	((src[2] & 0xF8) >> 3) | ((src[1] & 0xF8) << 2) | ((src[0] & 0xF8) << 7) | ((src[3] & 0x80) << 8)
+((src[1] & 0xF8) >> 3) | ((src[2] & 0xF8) << 2) | ((src[3] & 0xF8) << 7) | 0x8000
+//	((src[2] & 0xF8) >> 3) | ((src[1] & 0xF8) << 2) | ((src[0] & 0xF8) << 7) | ((src[3] & 0x80) << 8)
+
+
+typedef struct CCTexture {
+	int width, height;
+	void* addr;
+} CCTexture;
 
 static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
+	CCTexture* tex = Mem_TryAlloc(1, sizeof(CCTexture));
+	if (!tex) return NULL;
+
 	cc_uint16* tmp = Mem_TryAlloc(bmp->width * bmp->height, 2);
 	if (!tmp) return NULL;
+
+	tex->addr   = tex_vram_addr;
+	tex->width  = bmp->width;
+	tex->height = bmp->height;
+
+	tex_vram_addr += tex->width * tex->height * 2;
 
 	for (int y = 0; y < bmp->height; y++)
 	{
 		cc_uint32* src = bmp->scan0 + y * rowWidth;
 		cc_uint16* dst = tmp        + y * bmp->width;
-		
-		for (int x = 0; x < bmp->width; x++) 
+
+		for (int x = 0; x < bmp->width; x++)
 		{
 			cc_uint8* color = (cc_uint8*)&src[x];
 			dst[x] = BGRA8_to_SATURN(color);
-			dst[x] = 0xFEEE;
 		}
 	}
-	
-	scu_dma_transfer(0, _vdp1_vram_partitions.texture_base, tmp, bmp->width * bmp->height * 2);
-    scu_dma_transfer_wait(0);
-	Mem_Free(tmp);
-	return (void*)1;
+
+	scu_dma_transfer(0, tex->addr, tmp, tex->width * tex->height * 2);
+	scu_dma_transfer_wait(0);
+	return tex;
 }
 
 void Gfx_BindTexture(GfxResourceID texId) {
+	if (!texId) texId = white_square;
+	CCTexture* tex = (CCTexture*)texId;
+
+	tex_vram_cur = tex->addr;
 }
-		
+
 void Gfx_DeleteTexture(GfxResourceID* texId) {
+	CCTexture* tex = *texId;
+	if (tex) Mem_Free(tex);
+	*texId = NULL;
+	// TODO free vram ???
 }
 
 void Gfx_UpdateTexture(GfxResourceID texId, int x, int y, struct Bitmap* part, int rowWidth, cc_bool mipmaps) {
@@ -377,18 +410,21 @@ static void DrawTexturedQuads2D(int verticesCount, int startVertex) {
 
 		vdp1_cmdt_t* cmd;
 
+
 		cmd = NextPrimitive();
 		vdp1_cmdt_polygon_set(cmd);
 		vdp1_cmdt_color_set(cmd,     RGB1555(1, R >> 3, G >> 3, B >> 3));
 		vdp1_cmdt_draw_mode_set(cmd, color_draw_mode);
 		vdp1_cmdt_vtx_set(cmd, 		 points);
 
-		/*cmd = NextPrimitive();
+/*
+		cmd = NextPrimitive();
 		vdp1_cmdt_distorted_sprite_set(cmd);
 		vdp1_cmdt_char_size_set(cmd, 8, 8);
-		vdp1_cmdt_char_base_set(cmd, (vdp1_vram_t)_vdp1_vram_partitions.texture_base);
+		vdp1_cmdt_char_base_set(cmd, (vdp1_vram_t)tex_vram_cur);
 		vdp1_cmdt_draw_mode_set(cmd, texture_draw_mode);
-		vdp1_cmdt_vtx_set(cmd, 		 points);*/
+		vdp1_cmdt_vtx_set(cmd, 		 points);
+*/
 	}
 }
 
@@ -456,18 +492,22 @@ static void DrawTexturedQuads3D(int verticesCount, int startVertex) {
 
 		vdp1_cmdt_t* cmd;
 
+/*
 		cmd = NextPrimitive();
 		vdp1_cmdt_polygon_set(cmd);
 		vdp1_cmdt_color_set(cmd,     RGB1555(1, R >> 3, G >> 3, B >> 3));
 		vdp1_cmdt_draw_mode_set(cmd, color_draw_mode);
-		vdp1_cmdt_vtx_set(cmd, 		 points);
+		vdp1_cmdt_vtx_set(cmd, 		 points);*/
+		int gIndex = ((R >> 5) << 7) | ((G >> 4) << 3) | (B >> 3);
 
-		/*cmd = NextPrimitive();
+
+		cmd = NextPrimitive();
 		vdp1_cmdt_distorted_sprite_set(cmd);
 		vdp1_cmdt_char_size_set(cmd, 8, 8);
-		vdp1_cmdt_char_base_set(cmd, (vdp1_vram_t)_vdp1_vram_partitions.texture_base);
+		vdp1_cmdt_char_base_set(cmd, (vdp1_vram_t)tex_vram_cur);
 		vdp1_cmdt_draw_mode_set(cmd, texture_draw_mode);
-		vdp1_cmdt_vtx_set(cmd, 		 points);*/
+		vdp1_cmdt_gouraud_base_set(cmd, (vdp1_vram_t)&gourad_base[gIndex]);
+		vdp1_cmdt_vtx_set(cmd, 		 points);
 	}
 }
 
@@ -541,13 +581,10 @@ void Gfx_EndFrame(void) {
 	vdp1_sync();
 	vdp2_sync();
 	vdp2_sync_wait();
-
-	if (gfx_minFrameMs) LimitFPS();
 }
 
-void Gfx_SetFpsLimit(cc_bool vsync, float minFrameMs) {
-	gfx_minFrameMs = minFrameMs;
-	gfx_vsync      = vsync;
+void Gfx_SetVSync(cc_bool vsync) {
+	gfx_vsync = vsync;
 }
 
 void Gfx_OnWindowResize(void) {
@@ -555,6 +592,7 @@ void Gfx_OnWindowResize(void) {
 }
 
 void Gfx_SetViewport(int x, int y, int w, int h) { }
+void Gfx_SetScissor (int x, int y, int w, int h) { }
 
 void Gfx_GetApiInfo(cc_string* info) {
 	String_AppendConst(info, "-- Using Saturn --\n");

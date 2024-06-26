@@ -399,10 +399,8 @@ cc_result Gfx_TakeScreenshot(struct Stream* output) {
 	return ERR_NOT_SUPPORTED;
 }
 
-void Gfx_SetFpsLimit(cc_bool vsync, float minFrameMs) {
-	gfx_minFrameMs = minFrameMs;
-	gfx_vsync      = vsync;
-	
+void Gfx_SetVSync(cc_bool vsync) {
+	gfx_vsync = vsync;
 	// TODO GX2SetSwapInterval(1);
 }
 
@@ -452,8 +450,6 @@ void Gfx_EndFrame(void) {
 	GX2DrawDone();
 	GX2SetTVEnable(TRUE);
 	GX2SetDRCEnable(TRUE);
-
-	if (gfx_minFrameMs) LimitFPS();
 }
 
 cc_bool Gfx_WarnIfNecessary(void) { return false; }
@@ -468,8 +464,11 @@ void Gfx_OnWindowResize(void) {
 }
 
 void Gfx_SetViewport(int x, int y, int w, int h) {
-   GX2SetViewport(x, y, w, h, 0.0f, 1.0f);
-   GX2SetScissor( x, y, w, h);
+	GX2SetViewport(x, y, w, h, 0.0f, 1.0f);
+}
+
+void Gfx_SetScissor(int x, int y, int w, int h) {
+	GX2SetScissor( x, y, w, h);
 }
 
 void Gfx_3DS_SetRenderScreen1(enum Screen3DS screen) {

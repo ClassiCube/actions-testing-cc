@@ -158,7 +158,8 @@ static void JNICALL java_processSurfaceCreated(JNIEnv* env, jobject o, jobject s
 	Platform_LogConst("WIN - CREATED");
 	win_handle        = ANativeWindow_fromSurface(env, surface);
 	winCreated        = true;
-	Window_Main.Handle = win_handle;
+
+	Window_Main.Handle.ptr = win_handle;
 	RefreshWindowBounds();
 	/* TODO: Restore context */
 	Event_RaiseVoid(&WindowEvents.Created);
@@ -168,8 +169,9 @@ static void JNICALL java_processSurfaceDestroyed(JNIEnv* env, jobject o) {
 	Platform_LogConst("WIN - DESTROYED");
 	if (win_handle) ANativeWindow_release(win_handle);
 
-	win_handle        = NULL;
-	Window_Main.Handle = NULL;
+	win_handle             = NULL;
+	Window_Main.Handle.ptr = NULL;
+
 	/* eglSwapBuffers might return EGL_BAD_SURFACE, EGL_BAD_ALLOC, or some other error */
 	/* Instead the context is lost here in a consistent manner */
 	if (Gfx.Created) Gfx_LoseContext("surface lost");
@@ -326,7 +328,11 @@ static void RemakeWindowSurface(void) {
 }
 
 static void DoCreateWindow(void) {
-	Window_Main.Exists = true;
+	Window_Main.Exists   = true;
+	Window_Main.UIScaleX = DEFAULT_UI_SCALE_X;
+	Window_Main.UIScaleY = DEFAULT_UI_SCALE_Y;
+	
+	Window_Main.SoftKeyboardInstant = true;
 	RemakeWindowSurface();
 	/* always start as fullscreen */
 	Window_EnterFullscreen();
@@ -450,12 +456,11 @@ cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* save_args) {
     if (!save_args->defaultName.length) return SFD_ERR_NEED_DEFAULT_NAME;
 
     // save the item to a temp file, which is then (usually) later deleted by intent callback
-    cc_string tmpDir = String_FromConst("Exported");
-    Directory_Create(&tmpDir);
+    Directory_Create(FILEPATH_RAW("Exported"));
 
     cc_string path; char pathBuffer[FILENAME_SIZE];
     String_InitArray(path, pathBuffer);
-    String_Format3(&path, "%s/%s%c", &tmpDir, &save_args->defaultName, save_args->filters[0]);
+    String_Format2(&path, "Exported/%s%c", &save_args->defaultName, save_args->filters[0]);
     save_args->Callback(&path);
     // TODO kinda ugly, maybe a better way?
     cc_string file = String_UNSAFE_SubstringAt(&path, String_IndexOf(&path, '/') + 1);
@@ -518,6 +523,7 @@ void OnscreenKeyboard_Open(struct OpenKeyboardArgs* kArgs) {
 	JNIEnv* env;
 	jvalue args[2];
 	JavaGetCurrentEnv(env);
+	DisplayInfo.ShowingSoftKeyboard = true;
 
 	args[0].l = JavaMakeString(env, kArgs->text);
 	args[1].i = kArgs->type;
@@ -541,6 +547,8 @@ void OnscreenKeyboard_Draw3D(void) { }
 void OnscreenKeyboard_Close(void) {
 	JNIEnv* env;
 	JavaGetCurrentEnv(env);
+	DisplayInfo.ShowingSoftKeyboard = false;
+
 	JavaICall_Void(env, JAVA_closeKeyboard, NULL);
 }
 

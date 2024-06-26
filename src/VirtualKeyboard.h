@@ -10,42 +10,90 @@
 #include "Window.h"
 #include "Graphics.h"
 
-static cc_bool kb_inited, kb_showing, kb_shift, kb_needsHook;
+static cc_bool kb_inited, kb_shift, kb_needsHook;
 static struct FontDesc kb_font;
-static int kb_selected;
-static const char** kb_table;
+static int kb_curX, kb_curY;
 static float kb_padXAcc, kb_padYAcc;
 static char kb_buffer[512];
 static cc_string kb_str = String_FromArray(kb_buffer);
 static void (*KB_MarkDirty)(void);
 
-#define KB_CELLS_PER_ROW 13
-#define KB_LAST_CELL     (KB_CELLS_PER_ROW - 1)
-#define KB_TOTAL_ROWS     5
-#define KB_LAST_ROW      (KB_TOTAL_ROWS - 1)
+#define KB_TILE_SIZE 32
 
-#define KB_TOTAL_CHARS (KB_CELLS_PER_ROW * 4) + 4
-#define KB_INDEX(x, y) ((y) * KB_CELLS_PER_ROW + (x))
-#define KB_TOTAL_SIZE  KB_CELLS_PER_ROW * KB_TOTAL_ROWS
+#define KB_B_CAPS  0x10
+#define KB_B_SHIFT 0x20
+#define KB_B_SPACE 0x30
+#define KB_B_CLOSE 0x40
+#define KB_B_BACK  0x50
+#define KB_B_ENTER 0x60
 
-#define KB_TILE_SIZE     32
+#define KB_GetBehaviour(i) (kb->behaviour[i] & 0xF0)
+#define KB_GetCellWidth(i) (kb->behaviour[i] & 0x0F)
+#define KB_IsInvisible(i)  (kb->behaviour[i] == 0)
 
-static const char* kb_table_lower[] =
+struct KBLayout {
+	int numRows, cellsPerRow, rowWidth;
+	const char** lower;
+	const char** upper;
+	const char** table;
+	const cc_uint8* behaviour;
+};
+static struct KBLayout* kb;
+
+
+static const char* kb_normal_lower[] =
 {
 	"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "Backspace",
 	"q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "(", ")", "&    ",
 	"a", "s", "d", "f", "g", "h", "j", "k", "l", "?", ";", "'", "Enter",
 	"z", "x", "c", "v", "b", "n", "m", ".", ",","\\", "!", "@", "/    ",
-	"Caps", "Shift", "Space", "Close"
+	"Caps",0,0,0, "Shift",0,0,0, "Space",0,0,0, "Close"
 };
-static const char* kb_table_upper[] =
+static const char* kb_normal_upper[] =
 {
 	"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_", "+", "Backspace",
 	"Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "&   ",
 	"A", "S", "D", "F", "G", "H", "J", "K", "L", "?", ":", "\"", "Enter",
-	"Z", "X", "C", "V", "B", "N", "M", "<", ">","*", "%", "#", "/    ",
-	"Caps", "Shift", "Space", "Close"
+	"Z", "X", "C", "V", "B", "N", "M", "<", ">", "*", "%", "#", "/    ",
+	"Caps",0,0,0, "Shift",0,0,0, "Space",0,0,0, "Close"
 };
+static const cc_uint8 kb_normal_behaviour[] =
+{
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, KB_B_BACK | 4,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, KB_B_ENTER | 4,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4,
+	KB_B_CAPS | 4,0,0,0, KB_B_SHIFT | 4,0,0,0, KB_B_SPACE | 4,0,0,0, KB_B_CLOSE | 4
+};
+
+static struct KBLayout normal_layout = {
+	5, 13, 16, // 12 normal cells, 1 four wide cell
+	kb_normal_lower, kb_normal_upper, kb_normal_lower,
+	kb_normal_behaviour
+};
+
+
+static const char* kb_numpad[] =
+{
+	"1", "2", "3", "Backspace",
+	"4", "5", "6", "Enter",
+	"7", "8", "9", "Space",
+	"-", "0", ".", "Close",
+};
+static const cc_uint8 kb_numpad_behaviour[] =
+{
+	1, 1, 1, KB_B_BACK  | 4,
+	1, 1, 1, KB_B_ENTER | 4,
+	1, 1, 1, KB_B_SPACE | 4,
+	1, 1, 1, KB_B_CLOSE | 4
+};
+
+static struct KBLayout numpad_layout = {
+	4, 4, 7, // 3 normal cells, 1 four wide cell
+	kb_numpad, kb_numpad, kb_numpad,
+	kb_numpad_behaviour
+};
+
 
 extern void LWidget_DrawBorder(struct Context2D* ctx, BitmapCol color, int borderX, int borderY,
 								int x, int y, int width, int height);
@@ -57,22 +105,23 @@ static void VirtualKeyboard_Init(void) {
 }
 
 static int VirtualKeyboard_Width(void) {
-	return (KB_CELLS_PER_ROW + 3) * KB_TILE_SIZE;
+	return kb->rowWidth * KB_TILE_SIZE;
 }
 
 static int VirtualKeyboard_Height(void) {
-	return KB_TOTAL_ROWS * KB_TILE_SIZE;
+	return kb->numRows  * KB_TILE_SIZE;
 }
+
 static int VirtualKeyboard_GetSelected(void) {
-	// Last row needs special handling since it uses 4 cells per item
-	int selected = kb_selected;
-	if (selected < 0) return -1;
+	if (kb_curX < 0) return -1;
+	int maxCells = kb->cellsPerRow * kb->numRows;
+
+	int idx = kb_curX + kb->cellsPerRow * kb_curY;
+	Math_Clamp(idx, 0, maxCells - 1);
 	
-	int row  = selected / KB_CELLS_PER_ROW;
-	int cell = selected % KB_CELLS_PER_ROW;
-	if (row != KB_LAST_ROW) return selected;
-	cell /= 4;
-	return row * KB_CELLS_PER_ROW + cell;
+	// Skip over invisible cells
+	while (KB_IsInvisible(idx)) idx--;
+	return idx;
 }
 
 static void VirtualKeyboard_Close(void);
@@ -87,22 +136,21 @@ static void VirtualKeyboard_Draw(struct Context2D* ctx) {
 	struct DrawTextArgs args;
 	cc_string str;
 	int row, cell;
-	int i, x, y, w, h, dx, dy;
+	int i = 0, x, y, w, h, dx, dy;
 	int selected = VirtualKeyboard_GetSelected();
 	
 	Drawer2D.Colors['f'] = Drawer2D.Colors['0'];
 	if (kb_needsHook) VirtualKeyboard_Hook();
 
-	for (row = 0, y = 0; row < KB_TOTAL_ROWS; row++)
+	for (row = 0, y = 0; row < kb->numRows; row++)
 	{
-		for (cell = 0, x = 0; cell < KB_CELLS_PER_ROW; cell++)
+		for (cell = 0, x = 0; cell < kb->cellsPerRow; cell++, i++)
 		{
-			i = row * KB_CELLS_PER_ROW + cell;
-			if (i >= KB_TOTAL_CHARS) break;
+			if (KB_IsInvisible(i)) continue;
 
-			str = String_FromReadonly(kb_table[i]);
+			str = String_FromReadonly(kb->table[i]);
 			DrawTextArgs_Make(&args, &str, &kb_font, false);
-			w = KB_TILE_SIZE * (str.length > 1 ? 4 : 1);
+			w = KB_TILE_SIZE * KB_GetCellWidth(i);
 			h = KB_TILE_SIZE;
 
 			Gradient_Noise(ctx, i == selected ? KB_SELECTED_COLOR : KB_NORMAL_COLOR, 4, x, y, w, h);
@@ -119,6 +167,7 @@ static void VirtualKeyboard_Draw(struct Context2D* ctx) {
 	
 	Drawer2D.Colors['f'] = Drawer2D.Colors['F'];
 }
+
 static void VirtualKeyboard_CalcPosition(int* x, int* y, int width, int height) {
 	/* Draw virtual keyboard at centre of window bottom */
 	*y = height - 1 - VirtualKeyboard_Height();
@@ -131,19 +180,23 @@ static void VirtualKeyboard_CalcPosition(int* x, int* y, int width, int height) 
 /*########################################################################################################################*
 *-----------------------------------------------------Input handling------------------------------------------------------*
 *#########################################################################################################################*/
-static void VirtualKeyboard_Scroll(int delta) {
-	if (kb_selected < 0) kb_selected = 0;
+static void VirtualKeyboard_Scroll(int xDelta, int yDelta) {
+	int perRow = kb->cellsPerRow, numRows = kb->numRows;
+	if (kb_curX < 0) kb_curX = 0;
 
-	kb_selected += delta;
-	if (kb_selected < 0) kb_selected += KB_TOTAL_SIZE;
-	if (kb_selected >= KB_TOTAL_SIZE) kb_selected -= KB_TOTAL_SIZE;
+	kb_curX += xDelta;
+	if (kb_curX < 0)       kb_curX += perRow;
+	if (kb_curX >= perRow) kb_curX -= perRow;
+
+	kb_curY += yDelta;
+	if (kb_curY < 0)        kb_curY += numRows;
+	if (kb_curY >= numRows) kb_curY -= numRows;
 	
-	Math_Clamp(kb_selected, 0, KB_TOTAL_SIZE - 1);
 	KB_MarkDirty();
 }
 
 static void VirtualKeyboard_ToggleTable(void) {
-	kb_table = kb_table == kb_table_lower ? kb_table_upper : kb_table_lower;
+	kb->table = kb->table == kb->lower ? kb->upper : kb->lower;
 	KB_MarkDirty();
 }
 
@@ -164,41 +217,42 @@ static void VirtualKeyboard_ClickSelected(void) {
 	int selected = VirtualKeyboard_GetSelected();
 	if (selected < 0) return;
 
-	/* TODO kinda hacky, redo this */
-	switch (selected) {
-	case KB_INDEX(KB_LAST_CELL, 0):
+	switch (KB_GetBehaviour(selected)) {
+	case KB_B_BACK:
 		VirtualKeyboard_Backspace();
 		break;
-	case KB_INDEX(KB_LAST_CELL, 2):
-		OnscreenKeyboard_Close();
+	case KB_B_ENTER:
 		Input_SetPressed(CCKEY_ENTER);
 		Input_SetReleased(CCKEY_ENTER);
+		OnscreenKeyboard_Close();
 		break;
 
-	case KB_INDEX(0, KB_LAST_ROW):
+	case KB_B_CAPS:
 		VirtualKeyboard_ToggleTable();
 		break;
-	case KB_INDEX(1, KB_LAST_ROW):
+	case KB_B_SHIFT:
 		VirtualKeyboard_ToggleTable();
 		kb_shift = true;
 		break;
-	case KB_INDEX(2, KB_LAST_ROW):
+	case KB_B_SPACE:
 		VirtualKeyboard_AppendChar(' ');
 		break;
-	case KB_INDEX(3, KB_LAST_ROW):
+	case KB_B_CLOSE:
 		OnscreenKeyboard_Close();
 		break;
 
 	default:
-		VirtualKeyboard_AppendChar(kb_table[selected][0]);
+		VirtualKeyboard_AppendChar(kb->table[selected][0]);
 		break;
 	}
 }
 
 static void VirtualKeyboard_ProcessDown(void* obj, int key, cc_bool was) {
-	int delta = Input_CalcDelta(key, 1, KB_CELLS_PER_ROW);
-	if (delta) {
-		VirtualKeyboard_Scroll(delta);
+	int deltaX, deltaY;
+	Input_CalcDelta(key, &deltaX, &deltaY);
+
+	if (deltaX || deltaY) {
+		VirtualKeyboard_Scroll(deltaX, deltaY);
 	} else if (key == CCPAD_START  || key == CCPAD_A) {
 		VirtualKeyboard_ClickSelected();
 	} else if (key == CCPAD_SELECT || key == CCPAD_B) {
@@ -218,10 +272,10 @@ static void VirtualKeyboard_PadAxis(void* obj, int port, int axis, float x, floa
 	int xSteps, ySteps;
 
 	xSteps = Utils_AccumulateWheelDelta(&kb_padXAcc, x / 100.0f);
-	if (xSteps) VirtualKeyboard_Scroll(xSteps > 0 ? 1 : -1);
+	if (xSteps) VirtualKeyboard_Scroll(xSteps > 0 ? 1 : -1, 0);
 
 	ySteps = Utils_AccumulateWheelDelta(&kb_padYAcc, y / 100.0f);
-	if (ySteps) VirtualKeyboard_Scroll(ySteps > 0 ? KB_CELLS_PER_ROW : -KB_CELLS_PER_ROW);
+	if (ySteps) VirtualKeyboard_Scroll(0, ySteps > 0 ? 1 : -1);
 }
 
 
@@ -238,7 +292,7 @@ static void VirtualKeyboard_Display2D(Rect2D* r, struct Bitmap* bmp) {
 	struct Context2D ctx;
 	struct Bitmap copy = *bmp;
 	int x, y;
-	if (!kb_showing) return;
+	if (!DisplayInfo.ShowingSoftKeyboard) return;
 
 	/* Mark entire framebuffer as needing to be redrawn */
 	r->x = 0; r->width  = bmp->width;
@@ -287,7 +341,7 @@ static void VirtualKeyboard_MakeTexture(void) {
 
 /* TODO hook into context lost etc */
 static void VirtualKeyboard_Display3D(void) {
-	if (!kb_showing) return;
+	if (!DisplayInfo.ShowingSoftKeyboard) return;
 	
 	if (!kb_vb) {
 		kb_vb = Gfx_CreateDynamicVb(VERTEX_FORMAT_TEXTURED, 4);
@@ -324,14 +378,18 @@ static void VirtualKeyboard_Hook(void) {
 static void VirtualKeyboard_Open(struct OpenKeyboardArgs* args, cc_bool launcher) {
 	VirtualKeyboard_Close();
 	VirtualKeyboard_Init();
-	kb_showing   = true;
-	kb_needsHook = true;
+	DisplayInfo.ShowingSoftKeyboard = true;
 
-	kb_table    = kb_table_lower;
-	kb_selected = -1;
-	kb_padXAcc  = 0;
-	kb_padYAcc  = 0;
-	kb_shift    = false;
+	kb_needsHook = true;
+	kb_curX      = -1;
+	kb_curY      = 0;
+	kb_padXAcc   = 0;
+	kb_padYAcc   = 0;
+	kb_shift     = false;
+
+	int mode = args->type & 0xFF;
+	int num  = mode == KEYBOARD_TYPE_INTEGER || mode == KEYBOARD_TYPE_NUMBER;
+	kb = num ? &numpad_layout : &normal_layout;
 
 	kb_str.length = 0;
 	String_AppendString(&kb_str, args->text);
@@ -346,7 +404,7 @@ static void VirtualKeyboard_Open(struct OpenKeyboardArgs* args, cc_bool launcher
 }
 
 static void VirtualKeyboard_SetText(const cc_string* text) {
-	if (!kb_showing) return;
+	if (!DisplayInfo.ShowingSoftKeyboard) return;
 	String_Copy(&kb_str, text);
 }
 
@@ -362,6 +420,7 @@ static void VirtualKeyboard_Close(void) {
 	Window_Main.SoftKeyboardFocus = false;
 
 	KB_MarkDirty = NULL;
-	kb_showing   = false;
 	kb_needsHook = false;
+
+	DisplayInfo.ShowingSoftKeyboard = false;
 }
