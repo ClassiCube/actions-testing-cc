@@ -86,10 +86,10 @@ static int MapNativeKey(int code) {
 	case AKEYCODE_DPAD_LEFT:  return CCPAD_LEFT;
 	case AKEYCODE_DPAD_RIGHT: return CCPAD_RIGHT;
 
-	case AKEYCODE_BUTTON_A: return CCPAD_A;
-	case AKEYCODE_BUTTON_B: return CCPAD_B;
-	case AKEYCODE_BUTTON_X: return CCPAD_X;
-	case AKEYCODE_BUTTON_Y: return CCPAD_Y;
+	case AKEYCODE_BUTTON_A: return CCPAD_1;
+	case AKEYCODE_BUTTON_B: return CCPAD_2;
+	case AKEYCODE_BUTTON_X: return CCPAD_3;
+	case AKEYCODE_BUTTON_Y: return CCPAD_4;
 
 	case AKEYCODE_BUTTON_L1: return CCPAD_L;
 	case AKEYCODE_BUTTON_R1: return CCPAD_R;
@@ -107,15 +107,29 @@ static int MapNativeKey(int code) {
 static void JNICALL java_processKeyDown(JNIEnv* env, jobject o, jint code) {
 	int key = MapNativeKey(code);
 	Platform_Log2("KEY - DOWN %i,%i", &code, &key);
-	if (key) Input_SetPressed(key);
 
-	if (Input_IsPadButton(key)) Input.Sources |= INPUT_SOURCE_GAMEPAD;
+	if (Input_IsPadButton(key)) {
+		Input.Sources |= INPUT_SOURCE_GAMEPAD;
+		
+		int port = Gamepad_Connect(0xAD01D, PadBind_Defaults);
+		Gamepad_SetButton(port, key, true);
+	} else {
+		if (key) Input_SetPressed(key);
+	}
 }
 
 static void JNICALL java_processKeyUp(JNIEnv* env, jobject o, jint code) {
 	int key = MapNativeKey(code);
 	Platform_Log2("KEY - UP %i,%i", &code, &key);
-	if (key) Input_SetReleased(key);
+
+	if (Input_IsPadButton(key)) {
+		Input.Sources |= INPUT_SOURCE_GAMEPAD;
+		
+		int port = Gamepad_Connect(0xAD01D, PadBind_Defaults);
+		Gamepad_SetButton(port, key, false);
+	} else {
+		if (key) Input_SetReleased(key);
+	}
 }
 
 static void JNICALL java_processKeyChar(JNIEnv* env, jobject o, jint code) {
@@ -147,11 +161,13 @@ static void JNICALL java_processPointerMove(JNIEnv* env, jobject o, jint id, jin
 }
 
 static void JNICALL java_processJoystickL(JNIEnv* env, jobject o, jint x, jint y) {
-	Gamepad_SetAxis(0, PAD_AXIS_LEFT,  x / 4096.0f, y / 4096.0f, 1.0f / 60);
+	int port = Gamepad_Connect(0xAD01D, PadBind_Defaults);
+	Gamepad_SetAxis(port, PAD_AXIS_LEFT,  x / 4096.0f, y / 4096.0f, 1.0f / 60);
 }
 
 static void JNICALL java_processJoystickR(JNIEnv* env, jobject o, jint x, jint y) {
-	Gamepad_SetAxis(0, PAD_AXIS_RIGHT, x / 4096.0f, y / 4096.0f, 1.0f / 60);
+	int port = Gamepad_Connect(0xAD01D, PadBind_Defaults);
+	Gamepad_SetAxis(port, PAD_AXIS_RIGHT, x / 4096.0f, y / 4096.0f, 1.0f / 60);
 }
 
 static void JNICALL java_processSurfaceCreated(JNIEnv* env, jobject o, jobject surface) {
@@ -286,7 +302,10 @@ static void CacheMethodRefs(JNIEnv* env) {
 	JAVA_saveFileDialog = JavaGetIMethod(env, "saveFileDialog", "(Ljava/lang/String;Ljava/lang/String;)I");
 }
 
-void Window_PreInit(void) { }
+void Window_PreInit(void) { 
+	DisplayInfo.CursorVisible = true;
+}
+
 // TODO move to bottom of file?
 void Window_Init(void) {
 	JNIEnv* env;
@@ -340,6 +359,8 @@ static void DoCreateWindow(void) {
 void Window_Create2D(int width, int height) { DoCreateWindow(); }
 void Window_Create3D(int width, int height) { DoCreateWindow(); }
 
+void Window_Destroy(void) { }
+
 void Window_SetTitle(const cc_string* title) {
 	/* TODO: Implement this somehow */
 	/* Maybe https://stackoverflow.com/questions/2198410/how-to-change-title-of-activity-in-android */
@@ -391,7 +412,11 @@ void Window_ProcessEvents(float delta) {
 	JavaICall_Void(env, JAVA_processEvents, NULL);
 }
 
-void Window_ProcessGamepads(float delta) { }
+void Gamepads_Init(void) {
+
+}
+
+void Gamepads_Process(float delta) { }
 
 /* No actual mouse cursor */
 static void Cursor_GetRawPos(int* x, int* y) { *x = 0; *y = 0; }
@@ -475,7 +500,7 @@ cc_result Window_SaveFileDialog(const struct SaveFileDialogArgs* save_args) {
 }
 
 void Window_AllocFramebuffer(struct Bitmap* bmp, int width, int height) {
-	bmp->scan0  = (BitmapCol*)Mem_Alloc(width * height, 4, "window pixels");
+	bmp->scan0  = (BitmapCol*)Mem_Alloc(width * height, BITMAPCOLOR_SIZE, "window pixels");
 	bmp->width  = width;
 	bmp->height = height;
 }
@@ -540,9 +565,6 @@ void OnscreenKeyboard_SetText(const cc_string* text) {
 	JavaICall_Void(env, JAVA_setKeyboardText, args);
 	(*env)->DeleteLocalRef(env, args[0].l);
 }
-
-void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) { }
-void OnscreenKeyboard_Draw3D(void) { }
 
 void OnscreenKeyboard_Close(void) {
 	JNIEnv* env;

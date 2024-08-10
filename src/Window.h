@@ -1,6 +1,8 @@
 #ifndef CC_WINDOW_H
 #define CC_WINDOW_H
 #include "Core.h"
+CC_BEGIN_HEADER
+
 /* 
 Abstracts interaction with a windowing system (creating window, moving cursor, etc)
 Copyright 2014-2023 ClassiCube | Licensed under BSD-3
@@ -59,6 +61,8 @@ CC_VAR extern struct _DisplayData {
 	cc_bool DPIScaling;
 	/* Whether the soft keyboard is currently being shown */
 	cc_bool ShowingSoftKeyboard;
+	/* Whether the cursor is currently visible */
+	cc_bool CursorVisible;
 	/* Amount to offset content near the edges of the window by */
 	/*  Mainly intended for when the game is rendered on TV displays, where */
 	/*  pixels on the edges of the screen may be hidden due to overscan */
@@ -117,6 +121,9 @@ void Window_Create2D(int width, int height);
 /* Creates a window of the given size at centre of the screen. */
 /* NOTE: The created window is compatible with 3D rendering */
 void Window_Create3D(int width, int height);
+/* Destroys the window. */
+void Window_Destroy(void);
+
 /* Sets the text of the titlebar above the window. */
 CC_API void Window_SetTitle(const cc_string* title);
 
@@ -149,8 +156,11 @@ void Window_SetSize(int width, int height);
 void Window_RequestClose(void);
 /* Processes all pending window messages/events. */
 void Window_ProcessEvents(float delta);
+
+/* Initialises state for gamepad/joystick input. */
+void Gamepads_Init(void);
 /* Processes all pending gamepad/joystick input. */
-void Window_ProcessGamepads(float delta);
+void Gamepads_Process(float delta);
 
 /* Sets the position of the cursor. */
 /* NOTE: This should be avoided because it is unsupported on some platforms. */
@@ -209,8 +219,6 @@ void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args);
 /* As such, this is necessary to ensure the HTML input is consistent with */
 /*  whatever text input widget is actually being displayed on screen. */
 void OnscreenKeyboard_SetText(const cc_string* text);
-void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp);
-void OnscreenKeyboard_Draw3D(void);
 /* Hides/Removes the previously displayed on-screen keyboard. */
 void OnscreenKeyboard_Close(void);
 /* Locks/Unlocks the landscape orientation. */
@@ -227,7 +235,7 @@ void Window_UpdateRawMouse(void);
 void Window_DisableRawMouse(void);
 
 /* OpenGL contexts are heavily tied to the window, so for simplicitly are also provided here */
-#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK)
+#if CC_GFX_BACKEND_IS_GL()
 #define GLCONTEXT_DEFAULT_DEPTH 24
 /* Creates an OpenGL context, then makes it the active context. */
 /* NOTE: You MUST have created the window beforehand, as the GL context is attached to the window. */
@@ -254,4 +262,5 @@ void GLContext_SetVSync(cc_bool vsync);
 void GLContext_GetApiInfo(cc_string* info);
 #endif
 
+CC_END_HEADER
 #endif

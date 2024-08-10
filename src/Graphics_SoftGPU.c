@@ -42,6 +42,7 @@ void Gfx_Create(void) {
 	Gfx.MaxTexWidth  = 4096;
 	Gfx.MaxTexHeight = 4096;
 	Gfx.Created      = true;
+	Gfx.BackendType  = CC_GFX_BACKEND_SOFTGPU;
 	
 	Gfx_RestoreState();
 }
@@ -92,14 +93,17 @@ static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8
 
 	tex->width  = bmp->width;
 	tex->height = bmp->height;
-	CopyTextureData(tex->pixels, bmp->width * 4, bmp, rowWidth << 2);
+	CopyTextureData(tex->pixels, bmp->width * BITMAPCOLOR_SIZE,
+					bmp, rowWidth * BITMAPCOLOR_SIZE);
 	return tex;
 }
 
 void Gfx_UpdateTexture(GfxResourceID texId, int x, int y, struct Bitmap* part, int rowWidth, cc_bool mipmaps) {
 	CCTexture* tex = (CCTexture*)texId;
-	cc_uint32* dst = (tex->pixels + x) + y * tex->width;
-	CopyTextureData(dst, tex->width * 4, part, rowWidth << 2);
+	BitmapCol* dst = (tex->pixels + x) + y * tex->width;
+
+	CopyTextureData(dst, tex->width * BITMAPCOLOR_SIZE,
+					part, rowWidth  * BITMAPCOLOR_SIZE);
 }
 
 void Gfx_EnableMipmaps(void)  { }
@@ -237,17 +241,21 @@ void Gfx_DeleteDynamicVb(GfxResourceID* vb) { Gfx_DeleteVb(vb); }
 *---------------------------------------------------------Matrices--------------------------------------------------------*
 *#########################################################################################################################*/
 static float texOffsetX, texOffsetY;
-static struct Matrix _view, _proj, mvp;
+static struct Matrix _view, _proj, _mvp;
 
 void Gfx_LoadMatrix(MatrixType type, const struct Matrix* matrix) {
-	if (type == MATRIX_VIEW)       _view = *matrix;
-	if (type == MATRIX_PROJECTION) _proj = *matrix;
+	if (type == MATRIX_VIEW) _view = *matrix;
+	if (type == MATRIX_PROJ) _proj = *matrix;
 
-	Matrix_Mul(&mvp, &_view, &_proj);
+	Matrix_Mul(&_mvp, &_view, &_proj);
 }
 
-void Gfx_LoadIdentityMatrix(MatrixType type) {
-	Gfx_LoadMatrix(type, &Matrix_Identity);
+void Gfx_LoadMVP(const struct Matrix* view, const struct Matrix* proj, struct Matrix* mvp) {
+	_view = *view;
+	_proj = *proj;
+
+	Matrix_Mul(mvp, view, proj);
+	_mvp  = *mvp;
 }
 
 void Gfx_EnableTextureOffset(float x, float y) {
@@ -329,10 +337,10 @@ static int TransformVertex3D(int index, Vertex* vertex) {
 	char* ptr = (char*)gfx_vertices + index * gfx_stride;
 	Vector3* pos = (Vector3*)ptr;
 
-	vertex->x = pos->x * mvp.row1.x + pos->y * mvp.row2.x + pos->z * mvp.row3.x + mvp.row4.x;
-	vertex->y = pos->x * mvp.row1.y + pos->y * mvp.row2.y + pos->z * mvp.row3.y + mvp.row4.y;
-	vertex->z = pos->x * mvp.row1.z + pos->y * mvp.row2.z + pos->z * mvp.row3.z + mvp.row4.z;
-	vertex->w = pos->x * mvp.row1.w + pos->y * mvp.row2.w + pos->z * mvp.row3.w + mvp.row4.w;
+	vertex->x = pos->x * _mvp.row1.x + pos->y * _mvp.row2.x + pos->z * _mvp.row3.x + _mvp.row4.x;
+	vertex->y = pos->x * _mvp.row1.y + pos->y * _mvp.row2.y + pos->z * _mvp.row3.y + _mvp.row4.y;
+	vertex->z = pos->x * _mvp.row1.z + pos->y * _mvp.row2.z + pos->z * _mvp.row3.z + _mvp.row4.z;
+	vertex->w = pos->x * _mvp.row1.w + pos->y * _mvp.row2.w + pos->z * _mvp.row3.w + _mvp.row4.w;
 
 	if (gfx_format != VERTEX_FORMAT_TEXTURED) {
 		struct VertexColoured* v = (struct VertexColoured*)ptr;
@@ -440,6 +448,7 @@ static void DrawTriangle2D(Vertex* V0, Vertex* V1, Vertex* V2) {
 				A = PackedCol_A(color);
 			}
 
+			if (gfx_alphaTest && A < 0x80) continue;
 			if (gfx_alphaBlend) {
 				BitmapCol dst = colorBuffer[cb_index];
 				int dstR = BitmapCol_R(dst);
@@ -450,7 +459,6 @@ static void DrawTriangle2D(Vertex* V0, Vertex* V1, Vertex* V2) {
 				G = (G * A + dstG * (255 - A)) >> 8;
 				B = (B * A + dstB * (255 - A)) >> 8;
 			}
-			if (gfx_alphaTest && A < 0x80) continue;
 
 			colorBuffer[cb_index] = BitmapCol_Make(R, G, B, 0xFF);
 		}
@@ -551,7 +559,9 @@ static void DrawTriangle3D(Vertex* V0, Vertex* V1, Vertex* V2) {
 				A = PackedCol_A(color);
 			}
 
+			if (gfx_alphaTest && A < 0x80) continue;
 			int cb_index = y * cb_stride + x;
+			
 			if (gfx_alphaBlend) {
 				BitmapCol dst = colorBuffer[cb_index];
 				int dstR = BitmapCol_R(dst);
@@ -562,7 +572,6 @@ static void DrawTriangle3D(Vertex* V0, Vertex* V1, Vertex* V2) {
 				G = (G * A + dstG * (255 - A)) >> 8;
 				B = (B * A + dstB * (255 - A)) >> 8;
 			}
-			if (gfx_alphaTest && A < 0x80) continue;
 
 			if (depthWrite) depthBuffer[db_index] = z;
 			colorBuffer[cb_index] = BitmapCol_Make(R, G, B, 0xFF);
@@ -910,9 +919,8 @@ cc_result Gfx_TakeScreenshot(struct Stream* output) {
 	return Png_Encode(&bmp, output, CB_GetRow, false, NULL);
 }
 
-cc_bool Gfx_WarnIfNecessary(void) {
-	return false;
-}
+cc_bool Gfx_WarnIfNecessary(void) { return false; }
+cc_bool Gfx_GetUIOptions(struct MenuOptionsScreen* s) { return false; }
 
 void Gfx_BeginFrame(void) { }
 

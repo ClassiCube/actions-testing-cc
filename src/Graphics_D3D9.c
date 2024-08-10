@@ -179,6 +179,7 @@ void Gfx_Create(void) {
 
 	customMipmapsLevels = true;
 	Gfx.Created         = true;
+	Gfx.BackendType     = CC_GFX_BACKEND_D3D9;
 	TryCreateDevice();
 }
 
@@ -252,7 +253,7 @@ static void D3D9_SetTextureData(IDirect3DTexture9* texture, struct Bitmap* bmp, 
 	cc_result res = IDirect3DTexture9_LockRect(texture, lvl, &rect, NULL, 0);
 	if (res) Logger_Abort2(res, "D3D9_LockTextureData");
 
-	CopyTextureData(rect.pBits, rect.Pitch, bmp, rowWidth << 2);
+	CopyTextureData(rect.pBits, rect.Pitch, bmp, rowWidth * BITMAPCOLOR_SIZE);
 
 	res = IDirect3DTexture9_UnlockRect(texture, lvl);
 	if (res) Logger_Abort2(res, "D3D9_UnlockTextureData");
@@ -268,7 +269,7 @@ static void D3D9_SetTexturePartData(IDirect3DTexture9* texture, int x, int y, co
 	res = IDirect3DTexture9_LockRect(texture, lvl, &rect, &part, 0);
 	if (res) Logger_Abort2(res, "D3D9_LockTexturePartData");
 
-	CopyTextureData(rect.pBits, rect.Pitch, bmp, rowWidth << 2);
+	CopyTextureData(rect.pBits, rect.Pitch, bmp, rowWidth * BITMAPCOLOR_SIZE);
 
 	res = IDirect3DTexture9_UnlockRect(texture, lvl);
 	if (res) Logger_Abort2(res, "D3D9_UnlockTexturePartData");
@@ -287,7 +288,7 @@ static void D3D9_DoMipmaps(IDirect3DTexture9* texture, int x, int y, struct Bitm
 		if (width > 1)  width /= 2;
 		if (height > 1) height /= 2;
 
-		cur = (BitmapCol*)Mem_Alloc(width * height, 4, "mipmaps");
+		cur = (BitmapCol*)Mem_Alloc(width * height, BITMAPCOLOR_SIZE, "mipmaps");
 		GenMipmaps(width, height, cur, prev, rowWidth);
 
 		Bitmap_Init(mipmap, width, height, cur);
@@ -719,9 +720,10 @@ void Gfx_LoadMatrix(MatrixType type, const struct Matrix* matrix) {
 	IDirect3DDevice9_SetTransform(device, matrix_modes[type], (const D3DMATRIX*)matrix);
 }
 
-void Gfx_LoadIdentityMatrix(MatrixType type) {
-	if (Gfx.LostContext) return;
-	IDirect3DDevice9_SetTransform(device, matrix_modes[type], (const D3DMATRIX*)&Matrix_Identity);
+void Gfx_LoadMVP(const struct Matrix* view, const struct Matrix* proj, struct Matrix* mvp) {
+	Gfx_LoadMatrix(MATRIX_VIEW, view);
+	Gfx_LoadMatrix(MATRIX_PROJ, proj);
+	Matrix_Mul(mvp, view, proj);
 }
 
 static struct Matrix texMatrix = Matrix_IdentityValue;
@@ -850,6 +852,8 @@ void Gfx_EndFrame(void) {
 }
 
 cc_bool Gfx_WarnIfNecessary(void) { return false; }
+cc_bool Gfx_GetUIOptions(struct MenuOptionsScreen* s) { return false; }
+
 static const char* D3D9_StrFlags(void) {
 	if (createFlags & D3DCREATE_HARDWARE_VERTEXPROCESSING) return "Hardware";
 	if (createFlags & D3DCREATE_MIXED_VERTEXPROCESSING)    return "Mixed";

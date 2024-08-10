@@ -62,19 +62,26 @@ static void SetupProgram(int argc, char** argv) {
 	res = Platform_SetDefaultCurrentDirectory(argc, argv);
 	Options_Load();
 	Window_Init();
+	Gamepads_Init();
 	
 	if (res) Logger_SysWarn(res, "setting current directory");
 	Platform_LogConst("Starting " GAME_APP_NAME " ..");
 	String_InitArray(Server.Address, ipBuffer);
 }
 
-#define SP_HasDir(path) (String_IndexOf(&path, '/') >= 0 || String_IndexOf(&path, '\\') >= 0)
+#define SP_HasDir(path) (String_IndexOf(path, '/') >= 0 || String_IndexOf(path, '\\') >= 0)
+static cc_bool IsOpenableFile(const cc_string* path) {
+	cc_filepath str;
+	if (!SP_HasDir(path)) return false;
+	
+	Platform_EncodePath(&str, path);
+	return File_Exists(&str);
+}
 
 static int RunProgram(int argc, char** argv) {
 	cc_string args[GAME_MAX_CMDARGS];
-	cc_uint16 port;
-
 	int argsCount = Platform_GetCommandLineArgs(argc, argv, args);
+
 #ifdef _MSC_VER
 	/* NOTE: Make sure to comment this out before pushing a commit */
 	//cc_string rawArgs = String_FromConst("UnknownShadow200 fffff 127.0.0.1 25565");
@@ -94,11 +101,20 @@ static int RunProgram(int argc, char** argv) {
 		String_Copy(&Launcher_AutoHash, &args[0]);
 		Launcher_Run();
 	/* File path to auto load a map in singleplayer */
-	} else if (argsCount == 1 && SP_HasDir(args[0]) && File_Exists(&args[0])) {
+	} else if (argsCount == 1 && IsOpenableFile(&args[0])) {
 		Options_Get(LOPT_USERNAME, &Game_Username, DEFAULT_USERNAME);
 		String_Copy(&SP_AutoloadMap, &args[0]); /* TODO: don't copy args? */
 		RunGame();
 #endif
+	} else if (argsCount == 1 && DirectUrl_Claims(&args[0], &args[1], &args[2], &args[3])) {
+		String_Copy(&Game_Username, &args[2]);
+		String_Copy(&Game_Mppass,   &args[3]);
+		
+		if (!DirectUrl_ExtractAddress(&args[1], &Server.Address, &args[4], &Server.Port)) {
+			WarnInvalidArg("Invalid port", &args[4]);
+			return 1;
+		}
+		RunGame();		
 	} else if (argsCount == 1) {
 		String_Copy(&Game_Username, &args[0]);
 		RunGame();		
@@ -110,11 +126,10 @@ static int RunProgram(int argc, char** argv) {
 		String_Copy(&Game_Mppass,   &args[1]);
 		String_Copy(&Server.Address,&args[2]);
 
-		if (!Convert_ParseUInt16(&args[3], &port)) {
+		if (!Convert_ParseInt(&args[3], &Server.Port) || Server.Port < 0 || Server.Port > 65535) {
 			WarnInvalidArg("Invalid port", &args[3]);
 			return 1;
 		}
-		Server.Port = port;
 		RunGame();
 	}
 	return 0;

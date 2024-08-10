@@ -183,6 +183,7 @@ static void LogUnhandledNSErrors(NSException* ex) {
 
 void Window_PreInit(void) {
 	NSSetUncaughtExceptionHandler(LogUnhandledNSErrors);
+	DisplayInfo.CursorVisible = true;
 }
 
 static NSAutoreleasePool* pool;
@@ -266,7 +267,7 @@ static void RefreshWindowBounds(void) {
 
 - (void)windowDidMove:(NSNotification *)notification {
 	RefreshWindowBounds();
-#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK)
+#if CC_GFX_BACKEND_IS_GL()
 	GLContext_Update();
 #endif
 }
@@ -394,6 +395,8 @@ static void DoCreateWindow(int width, int height) {
 }
 void Window_Create2D(int width, int height) { DoCreateWindow(width, height); }
 void Window_Create3D(int width, int height) { DoCreateWindow(width, height); }
+
+void Window_Destroy(void) { }
 
 void Window_SetTitle(const cc_string* title) {
 	char raw[NATIVE_STR_LEN];
@@ -604,7 +607,11 @@ void Window_ProcessEvents(float delta) {
 	}
 }
 
-void Window_ProcessGamepads(float delta) { }
+void Gamepads_Init(void) {
+
+}
+
+void Gamepads_Process(float delta) { }
 
 
 /*########################################################################################################################*
@@ -696,7 +703,7 @@ cc_result Window_OpenFileDialog(const struct OpenFileDialogArgs* args) {
 *#########################################################################################################################*/
 static struct Bitmap fb_bmp;
 void Window_AllocFramebuffer(struct Bitmap* bmp, int width, int height) {
-	bmp->scan0  = (BitmapCol*)Mem_Alloc(width * height, 4, "window pixels");
+	bmp->scan0  = (BitmapCol*)Mem_Alloc(width * height, BITMAPCOLOR_SIZE, "window pixels");
 	bmp->width  = width;
 	bmp->height = height;
 	fb_bmp      = *bmp;
@@ -755,15 +762,13 @@ void Window_FreeFramebuffer(struct Bitmap* bmp) {
 
 void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) { }
 void OnscreenKeyboard_SetText(const cc_string* text) { }
-void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) { }
-void OnscreenKeyboard_Draw3D(void) { }
 void OnscreenKeyboard_Close(void) { }
 
 
 /*########################################################################################################################*
 *--------------------------------------------------------NSOpenGL---------------------------------------------------------*
 *#########################################################################################################################*/
-#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK) && !defined CC_BUILD_EGL
+#if CC_GFX_BACKEND_IS_GL() && !defined CC_BUILD_EGL
 static NSOpenGLContext* ctxHandle;
 #include <OpenGL/OpenGL.h>
 

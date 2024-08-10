@@ -19,6 +19,7 @@
 #define FB_SIZE (BUFFER_WIDTH * SCREEN_HEIGHT * 4)
 static unsigned int __attribute__((aligned(16))) list[262144];
 
+#define GE_CMD_TEXTUREMAPENABLE		0x1E
 
 /*########################################################################################################################*
 *---------------------------------------------------------General---------------------------------------------------------*
@@ -110,7 +111,7 @@ void Gfx_FreeState(void) {
 typedef struct CCTexture_ {
 	cc_uint32 width, height;
 	cc_uint32 pad1, pad2; // data must be aligned to 16 bytes
-	cc_uint32 pixels[];
+	BitmapCol pixels[];
 } CCTexture;
 
 static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
@@ -119,14 +120,17 @@ static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8
 	
 	tex->width  = bmp->width;
 	tex->height = bmp->height;
-	CopyTextureData(tex->pixels, bmp->width * 4, bmp, rowWidth << 2);
+	CopyTextureData(tex->pixels, bmp->width * BITMAPCOLOR_SIZE,
+					bmp, rowWidth * BITMAPCOLOR_SIZE);
 	return tex;
 }
 
 void Gfx_UpdateTexture(GfxResourceID texId, int x, int y, struct Bitmap* part, int rowWidth, cc_bool mipmaps) {
 	CCTexture* tex = (CCTexture*)texId;
-	cc_uint32* dst = (tex->pixels + x) + y * tex->width;
-	CopyTextureData(dst, tex->width * 4, part, rowWidth << 2);
+	BitmapCol* dst = (tex->pixels + x) + y * tex->width;
+
+	CopyTextureData(dst, tex->width * BITMAPCOLOR_SIZE,
+					part, rowWidth  * BITMAPCOLOR_SIZE);
 	// TODO: Do line by line and only invalidate the actually changed parts of lines?
 	sceKernelDcacheWritebackInvalidateRange(dst, (tex->width * part->height) * 4);
 }
@@ -264,7 +268,7 @@ void Gfx_BeginFrame(void) {
 }
 
 void Gfx_ClearBuffers(GfxBuffers buffers) {
-	int targets = 0;
+	int targets = GU_FAST_CLEAR_BIT;
 	if (buffers & GFX_BUFFER_COLOR) targets |= GU_COLOR_BUFFER_BIT;
 	if (buffers & GFX_BUFFER_DEPTH) targets |= GU_DEPTH_BUFFER_BIT;
 	
@@ -297,6 +301,7 @@ static int vb_size;
 
 GfxResourceID Gfx_CreateIb2(int count, Gfx_FillIBFunc fillFunc, void* obj) {
 	fillFunc(gfx_indices, count, obj);
+	return gfx_indices;
 }
 
 void Gfx_BindIb(GfxResourceID ib)    { }
@@ -396,8 +401,10 @@ void Gfx_LoadMatrix(MatrixType type, const struct Matrix* matrix) {
 	sceGuSetMatrix(matrix_modes[type], &tmp_matrix);
 }
 
-void Gfx_LoadIdentityMatrix(MatrixType type) {
-	sceGuSetMatrix(matrix_modes[type], &identity);
+void Gfx_LoadMVP(const struct Matrix* view, const struct Matrix* proj, struct Matrix* mvp) {
+	Gfx_LoadMatrix(MATRIX_VIEW, view);
+	Gfx_LoadMatrix(MATRIX_PROJ, proj);
+	Matrix_Mul(mvp, view, proj);
 }
 
 void Gfx_EnableTextureOffset(float x, float y) {
@@ -414,6 +421,7 @@ void Gfx_DisableTextureOffset(void) {
 *---------------------------------------------------------Drawing---------------------------------------------------------*
 *#########################################################################################################################*/
 cc_bool Gfx_WarnIfNecessary(void) { return false; }
+cc_bool Gfx_GetUIOptions(struct MenuOptionsScreen* s) { return false; }
 
 void Gfx_SetVertexFormat(VertexFormat fmt) {
 	if (fmt == gfx_format) return;

@@ -60,12 +60,10 @@ void Window_Init(void) {
 	Window_Main.UIScaleX = DEFAULT_UI_SCALE_X;
 	Window_Main.UIScaleY = DEFAULT_UI_SCALE_Y;
 
-	Input.Sources = INPUT_SOURCE_GAMEPAD;
 	DisplayInfo.ContentOffsetX = 20;
 	DisplayInfo.ContentOffsetY = 20;
 	Window_Main.SoftKeyboard   = SOFT_KEYBOARD_VIRTUAL;
 
-	ioPadInit(MAX_PORT_NUM);
 	ioKbInit(MAX_KB_PORT_NUM);
 	ioKbSetCodeType(0, KB_CODETYPE_RAW);
 	ioKbGetConfiguration(0, &kb_config);
@@ -81,6 +79,8 @@ void Window_Create2D(int width, int height) {
 void Window_Create3D(int width, int height) { 
 	launcherMode = false; 
 }
+
+void Window_Destroy(void) { }
 
 void Window_SetTitle(const cc_string* title) { }
 void Clipboard_GetText(cc_string* value) { } // TODO sceClipboardGetText
@@ -104,6 +104,7 @@ void Window_RequestClose(void) {
 *#########################################################################################################################*/
 #define MAX_KEYCODE_MAPPINGS 148
 static char now_pressed[MAX_KEYCODE_MAPPINGS], was_pressed[MAX_KEYCODE_MAPPINGS];
+
 static int MapKey(int k) {
 	if (k >= KB_RAWKEY_A      && k <= KB_RAWKEY_Z)      return 'A'       + (k - KB_RAWKEY_A);
 	if (k >= KB_RAWKEY_1      && k <= KB_RAWKEY_9)      return '1'       + (k - KB_RAWKEY_1);
@@ -273,12 +274,22 @@ void Window_DisableRawMouse(void) { Input.RawMode = false; }
 /*########################################################################################################################*
 *-------------------------------------------------------Gamepads----------------------------------------------------------*
 *#########################################################################################################################*/
+void Gamepads_Init(void) {
+	Input.Sources |= INPUT_SOURCE_GAMEPAD;
+	ioPadInit(MAX_PORT_NUM);
+	
+	Input_DisplayNames[CCPAD_1] = "CIRCLE";
+	Input_DisplayNames[CCPAD_2] = "CROSS";
+	Input_DisplayNames[CCPAD_3] = "SQUARE";
+	Input_DisplayNames[CCPAD_4] = "TRIANGLE";
+}
+
 static void HandleButtons(int port, padData* data) {
 	//Platform_Log2("BUTTONS: %h (%h)", &data->button[2], &data->button[0]);
-	Gamepad_SetButton(port, CCPAD_A, data->BTN_TRIANGLE);
-	Gamepad_SetButton(port, CCPAD_B, data->BTN_SQUARE);
-	Gamepad_SetButton(port, CCPAD_X, data->BTN_CROSS);
-	Gamepad_SetButton(port, CCPAD_Y, data->BTN_CIRCLE);
+	Gamepad_SetButton(port, CCPAD_1, data->BTN_CIRCLE);
+	Gamepad_SetButton(port, CCPAD_2, data->BTN_CROSS);
+	Gamepad_SetButton(port, CCPAD_3, data->BTN_SQUARE);
+	Gamepad_SetButton(port, CCPAD_4, data->BTN_TRIANGLE);
       
 	Gamepad_SetButton(port, CCPAD_START,  data->BTN_START);
 	Gamepad_SetButton(port, CCPAD_SELECT, data->BTN_SELECT);
@@ -310,13 +321,14 @@ static void ProcessPadInput(int port, float delta, padData* pad) {
 	HandleJoystick(port, PAD_AXIS_RIGHT, pad->ANA_R_H - 0x80, pad->ANA_R_V - 0x80, delta);
 }
 
-void Window_ProcessGamepads(float delta) {
+void Gamepads_Process(float delta) {
 	ioPadGetInfo(&pad_info);
-	for (int port = 0; port < INPUT_MAX_GAMEPADS; port++)
+	for (int i = 0; i < MAX_PORT_NUM; i++)
 	{
-		if (!pad_info.status[port]) continue;
-		
-		ioPadGetData(port, &pad_data);
+		if (!pad_info.status[i]) continue;
+		ioPadGetData(i, &pad_data);
+
+		int port = Gamepad_Connect(0x503 + i, PadBind_Defaults);
 		ProcessPadInput(port, delta, &pad_data);
 	}
 }
@@ -364,14 +376,6 @@ void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) {
 
 void OnscreenKeyboard_SetText(const cc_string* text) {
 	VirtualKeyboard_SetText(text);
-}
-
-void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) {
-	VirtualKeyboard_Display2D(r, bmp);
-}
-
-void OnscreenKeyboard_Draw3D(void) {
-	VirtualKeyboard_Display3D();
 }
 
 void OnscreenKeyboard_Close(void) {

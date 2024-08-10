@@ -21,8 +21,16 @@ jobs:
       - name: Compile Dreamcast build
         id: compile
         run: |
+          apt-get update
+          apt-get -y install mkisofs
+
+		  mkdir /opt/toolchains/dc/kos/utils
+		  wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/cdi4dc
+		  chmod +x cdi4dc
+		  mv cdi4dc /opt/toolchains/dc/kos/utils/cdi4dc
+
           source /opt/toolchains/dc/kos/environ.sh
-          export PATH=/opt/toolchains/dc/kos/utils/img4dc/build/cdi4dc/:$PATH
+          export PATH=/opt/toolchains/dc/kos/utils/:$PATH
           make dreamcast
           
 

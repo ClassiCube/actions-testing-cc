@@ -1,7 +1,7 @@
 #include "SSL.h"
 #include "Errors.h"
 
-#if defined CC_BUILD_SCHANNEL
+#if CC_SSL_BACKEND == CC_SSL_BACKEND_SCHANNEL
 #define WIN32_LEAN_AND_MEAN
 #define NOSERVICE
 #define NOMCX
@@ -404,10 +404,10 @@ cc_result SSL_Free(void* ctx_) {
 	Mem_Free(ctx);
 	return 0; 
 }
-#elif defined CC_BUILD_BEARSSL
+#elif CC_SSL_BACKEND == CC_SSL_BACKEND_BEARSSL
 #include "String.h"
 #include "bearssl.h"
-#include "../misc/certs.h"
+#include "../misc/certs/certs.h"
 // https://github.com/unkaktus/bearssl/blob/master/samples/client_basic.c#L283
 #define SSL_ERROR_SHIFT 0xB5510000
 
@@ -460,6 +460,10 @@ static void InjectEntropy(SSLContext* ctx) {
 
 static void SetCurrentTime(SSLContext* ctx) {
 	cc_uint64 cur = DateTime_CurrentUTC();
+	/* clamp min system time from RTC to start of 2024 */
+	/* Times earlier than that usually mean an improperly calibrated RTC */
+	if (cur < 63839664000ull) cur = 63839664000ull;
+
 	uint32_t days = (uint32_t)(cur / 86400) + 366;
 	uint32_t secs = (uint32_t)(cur % 86400);
 		

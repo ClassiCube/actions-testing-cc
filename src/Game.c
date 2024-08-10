@@ -22,6 +22,7 @@
 #include "Http.h"
 #include "Inventory.h"
 #include "Input.h"
+#include "InputHandler.h"
 #include "Server.h"
 #include "TexturePack.h"
 #include "Screens.h"
@@ -69,7 +70,7 @@ static char mppassBuffer[STRING_SIZE];
 cc_string Game_Username  = String_FromArray(usernameBuffer);
 cc_string Game_Mppass    = String_FromArray(mppassBuffer);
 #ifdef CC_BUILD_SPLITSCREEN
-int Game_NumLocalPlayers = 1;
+int Game_NumStates = 1;
 #endif
 
 const char* const FpsLimit_Names[FPS_LIMIT_COUNT] = {
@@ -339,7 +340,12 @@ static void LoadOptions(void) {
 	Game_ClassicMode  = Options_GetBool(OPT_CLASSIC_MODE,  false);
 	Game_ClassicHacks = Options_GetBool(OPT_CLASSIC_HACKS, false);
 	Game_Anaglyph3D   = Options_GetBool(OPT_ANAGLYPH3D,    false);
+#if defined CC_BUILD_PS1 || defined CC_BUILD_SATURN
+	/* View bobbing requires per-frame matrix multiplications - costly on FPU less systems */
+	Game_ViewBobbing  = Options_GetBool(OPT_VIEW_BOBBING,  false);
+#else
 	Game_ViewBobbing  = Options_GetBool(OPT_VIEW_BOBBING,  true);
+#endif
 	
 	Game_AllowCustomBlocks   = !Game_ClassicMode && Options_GetBool(OPT_CUSTOM_BLOCKS,      true);
 	Game_SimpleArmsAnim      = !Game_ClassicMode && Options_GetBool(OPT_SIMPLE_ARMS_ANIM,   false);
@@ -423,6 +429,7 @@ static void Game_Load(void) {
 	Game_AddComponent(&World_Component);
 	Game_AddComponent(&Textures_Component);
 	Game_AddComponent(&Input_Component);
+	Game_AddComponent(&InputHandler_Component);
 	Game_AddComponent(&Camera_Component);
 	Game_AddComponent(&Gfx_Component);
 	Game_AddComponent(&Blocks_Component);
@@ -498,17 +505,18 @@ void Game_SetMinFrameTime(float frameTimeMS) {
 }
 #endif
 
-static void UpdateViewMatrix(void) {
-	Camera.Active->GetView(&Gfx.View);
-	FrustumCulling_CalcFrustumEquations(&Gfx.Projection, &Gfx.View);
-}
-
 static void Render3DFrame(float delta, float t) {
+	struct Matrix mvp;
 	Vec3 pos;
-	Gfx_LoadMatrix(MATRIX_PROJECTION, &Gfx.Projection);
-	Gfx_LoadMatrix(MATRIX_VIEW,       &Gfx.View);
-	if (EnvRenderer_ShouldRenderSkybox()) EnvRenderer_RenderSkybox();
 
+	Camera.Active->GetView(&Gfx.View);
+	/*Gfx_LoadMatrix(MATRIX_PROJ, &Gfx.Projection);
+	Gfx_LoadMatrix(MATRIX_VIEW, &Gfx.View);
+	FrustumCulling_CalcFrustumEquations(&Gfx.Projection, &Gfx.View);*/
+	Gfx_LoadMVP(&Gfx.View, &Gfx.Projection, &mvp);
+	FrustumCulling_CalcFrustumEquations(&mvp);
+
+	if (EnvRenderer_ShouldRenderSkybox()) EnvRenderer_RenderSkybox();
 	AxisLinesRenderer_Render();
 	Entities_RenderModels(delta, t);
 	EntityNames_Render();
@@ -628,13 +636,20 @@ static void LimitFPS(void) {
 #else
 static float gfx_targetTime, gfx_actualTime;
 
+static CC_INLINE float ElapsedMilliseconds(cc_uint64 beg, cc_uint64 end) {
+	cc_uint64 elapsed = Stopwatch_ElapsedMicroseconds(beg, end);
+	if (elapsed > 5000000) elapsed = 5000000;
+	
+	return (int)elapsed / 1000.0f;
+}
+
 /* Examines difference between expected and actual frame times, */
 /*  then sleeps if actual frame time is too fast */
 static void LimitFPS(void) {
 	cc_uint64 frameEnd, sleepEnd;
 	
 	frameEnd = Stopwatch_Measure();
-	gfx_actualTime += Stopwatch_ElapsedMicroseconds(frameStart, frameEnd) / 1000.0f;
+	gfx_actualTime += ElapsedMilliseconds(frameStart, frameEnd);
 	gfx_targetTime += gfx_minFrameMs;
 
 	/* going faster than FPS limit - sleep to slow down */
@@ -646,7 +661,7 @@ static void LimitFPS(void) {
 		/*  duration can significantly deviate from requested time */ 
 		/*  (e.g. requested 4ms, but actually slept for 8ms) */
 		sleepEnd = Stopwatch_Measure();
-		gfx_actualTime += Stopwatch_ElapsedMicroseconds(frameEnd, sleepEnd) / 1000.0f;
+		gfx_actualTime += ElapsedMilliseconds(frameEnd, sleepEnd);
 	}
 
 	/* reset accumulated time to avoid excessive FPS drift */
@@ -655,7 +670,7 @@ static void LimitFPS(void) {
 #endif
 
 static CC_INLINE void Game_DrawFrame(float delta, float t) {
-	UpdateViewMatrix();
+	int i;
 
 	if (!Gui_GetBlocksWorld()) {
 		Camera.Active->GetPickedBlock(&Game_SelectedPos); /* TODO: only pick when necessary */
@@ -673,7 +688,11 @@ static CC_INLINE void Game_DrawFrame(float delta, float t) {
 
 	Gfx_Begin2D(Game.Width, Game.Height);
 	Gui_RenderGui(delta);
-	OnscreenKeyboard_Draw3D();
+	for (i = 0; i < Array_Elems(Game.Draw2DHooks); i++)
+	{
+		if (Game.Draw2DHooks[i]) Game.Draw2DHooks[i](delta);
+	}
+
 /* TODO find a better solution than this */
 #ifdef CC_BUILD_3DS
 	if (Game_Anaglyph3D) {
@@ -689,6 +708,7 @@ static CC_INLINE void Game_DrawFrame(float delta, float t) {
 static void DrawSplitscreen(float delta, float t, int i, int x, int y, int w, int h) {
 	Gfx_SetViewport(x, y, w, h);
 	Gfx_SetScissor( x, y, w, h);
+	Game.CurrentState = i;
 	
 	Entities.CurPlayer = &LocalPlayer_Instances[i];
 	LocalPlayer_SetInterpPosition(Entities.CurPlayer, t);
@@ -696,18 +716,30 @@ static void DrawSplitscreen(float delta, float t, int i, int x, int y, int w, in
 	
 	Game_DrawFrame(delta, t);
 }
+
+int Game_MapState(int deviceIndex) {
+	if (Game_NumStates >= 4 && deviceIndex == 3) return 3;
+	if (Game_NumStates >= 3 && deviceIndex == 2) return 2;
+	if (Game_NumStates >= 2 && deviceIndex == 1) return 1;
+
+	return 0;
+}
 #endif
 
 static CC_INLINE void Game_RenderFrame(void) {
 	struct ScheduledTask entTask;
 	float t;
 
-	cc_uint64 render = Stopwatch_Measure();
-	double delta     = Stopwatch_ElapsedMicroseconds(frameStart, render) / (1000.0 * 1000.0);
+	cc_uint64 render  = Stopwatch_Measure();
+	cc_uint64 elapsed = Stopwatch_ElapsedMicroseconds(frameStart, render);
+	/* avoid large delta with suspended process */
+	if (elapsed > 5000000) elapsed = 5000000; 
+	
+	double deltaD     = (int)elapsed / (1000.0 * 1000.0);
+	float delta       = (float)deltaD;
 	Window_ProcessEvents(delta);
 
-	if (delta > 5.0)  delta = 5.0; /* avoid large delta with suspended process */
-	if (delta <= 0.0) return;
+	if (delta <= 0.0f) return;
 	frameStart = render;
 
 	/* TODO: Should other tasks get called back too? */
@@ -726,8 +758,8 @@ static CC_INLINE void Game_RenderFrame(void) {
 	}
 
 	Gfx_BeginFrame();
-	Gfx_BindIb(Gfx_defaultIb);
-	Game.Time += delta;
+	Gfx_BindIb(Gfx.DefaultIb);
+	Game.Time += deltaD;
 	Game_Vertices = 0;
 
 	if (Input.Sources & INPUT_SOURCE_GAMEPAD) Gamepad_Tick(delta);
@@ -735,11 +767,11 @@ static CC_INLINE void Game_RenderFrame(void) {
 
 	if (!Window_Main.Focused && !Gui.InputGrab) Gui_ShowPauseMenu();
 
-	if (InputBind_IsPressed(BIND_ZOOM_SCROLL) && !Gui.InputGrab) {
+	if (Bind_IsTriggered[BIND_ZOOM_SCROLL] && !Gui.InputGrab) {
 		InputHandler_SetFOV(Camera.ZoomFov);
 	}
 
-	PerformScheduledTasks(delta);
+	PerformScheduledTasks(deltaD);
 	entTask = tasks[entTaskI];
 	t = (float)(entTask.accumulator / entTask.interval);
 	LocalPlayer_SetInterpPosition(Entities.CurPlayer, t);
@@ -754,7 +786,7 @@ static CC_INLINE void Game_RenderFrame(void) {
 	Gfx_ClearBuffers(GFX_BUFFER_COLOR | GFX_BUFFER_DEPTH);
 	
 #ifdef CC_BUILD_SPLITSCREEN
-	switch (Game_NumLocalPlayers) {
+	switch (Game_NumStates) {
 		case 1:
 			Game_DrawFrame(delta, t); break;
 		case 2:
@@ -846,10 +878,12 @@ void Game_Run(int width, int height, const cc_string* title) {
 	Window_SetTitle(title);
 	Window_Show();
 	gameRunning = true;
+	Game.CurrentState = 0;
 
 	Game_Load();
 	Event_RaiseVoid(&WindowEvents.Resized);
 
 	frameStart = Stopwatch_Measure();
 	Game_RunLoop();
+	Window_Destroy();
 }

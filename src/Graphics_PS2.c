@@ -163,7 +163,7 @@ typedef struct CCTexture_ {
 	cc_uint32 width, height;
 	cc_uint32 log2_width, log2_height;
 	cc_uint32 pad[(64 - 16)/4];
-	cc_uint32 pixels[]; // aligned to 64 bytes (only need 16?)
+	BitmapCol pixels[]; // aligned to 64 bytes (only need 16?)
 } CCTexture;
 
 static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
@@ -175,7 +175,8 @@ static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8
 	tex->log2_width  = draw_log2(bmp->width);
 	tex->log2_height = draw_log2(bmp->height);
 	
-	CopyTextureData(tex->pixels, bmp->width * 4, bmp, rowWidth << 2);
+	CopyTextureData(tex->pixels, bmp->width * BITMAPCOLOR_SIZE, 
+					bmp, rowWidth * BITMAPCOLOR_SIZE);
 	return tex;
 }
 
@@ -227,8 +228,10 @@ void Gfx_DeleteTexture(GfxResourceID* texId) {
 
 void Gfx_UpdateTexture(GfxResourceID texId, int x, int y, struct Bitmap* part, int rowWidth, cc_bool mipmaps) {
 	CCTexture* tex = (CCTexture*)texId;
-	cc_uint32* dst = (tex->pixels + x) + y * tex->width;
-	CopyTextureData(dst, tex->width * 4, part, rowWidth << 2);
+	BitmapCol* dst = (tex->pixels + x) + y * tex->width;
+
+	CopyTextureData(dst, tex->width * BITMAPCOLOR_SIZE, 
+					part, rowWidth  * BITMAPCOLOR_SIZE);
 }
 
 void Gfx_EnableMipmaps(void)  { }
@@ -263,14 +266,14 @@ static void UpdateState(int context) {
 	stateDirty = false;
 }
 
-static void UpdateFormat(void) {
+static void UpdateFormat(int context) {
 	cc_bool texturing = gfx_format == VERTEX_FORMAT_TEXTURED;
 	
 	PACK_GIFTAG(q, GIF_SET_TAG(1,0,0,0, GIF_FLG_PACKED, 1), GIF_REG_AD);
 	q++;
 	PACK_GIFTAG(q, GS_SET_PRIM(PRIM_TRIANGLE, PRIM_SHADE_GOURAUD, texturing, DRAW_DISABLE,
 							  gfx_alphaBlend, DRAW_DISABLE, PRIM_MAP_ST,
-							  0, PRIM_UNFIXED), GS_REG_PRIM);
+							  context, PRIM_UNFIXED), GS_REG_PRIM);
 	q++;
 	
 	formatDirty = false;
@@ -295,7 +298,9 @@ void Gfx_ClearBuffers(GfxBuffers buffers) {
 	q = draw_disable_tests(q, 0, &fb_depth);
 	q = draw_clear(q, 0, 2048.0f - fb_colors[0].width / 2.0f, 2048.0f - fb_colors[0].height / 2.0f,
 					fb_colors[0].width, fb_colors[0].height, clearR, clearG, clearB);
+
 	UpdateState(0);
+	UpdateFormat(0);
 }
 
 void Gfx_ClearColor(PackedCol color) {
@@ -440,17 +445,18 @@ void Gfx_DeleteDynamicVb(GfxResourceID* vb) { Gfx_DeleteVb(vb); }
 static struct Matrix _view, _proj;
 
 void Gfx_LoadMatrix(MatrixType type, const struct Matrix* matrix) {
-	if (type == MATRIX_VIEW)       _view = *matrix;
-	if (type == MATRIX_PROJECTION) _proj = *matrix;
+	if (type == MATRIX_VIEW) _view = *matrix;
+	if (type == MATRIX_PROJ) _proj = *matrix;
 
 	Matrix_Mul(&mvp, &_view, &_proj);
 	// TODO	
 	LoadMvpMatrix(&mvp);
 }
 
-void Gfx_LoadIdentityMatrix(MatrixType type) {
-	Gfx_LoadMatrix(type, &Matrix_Identity);
-	// TODO
+void Gfx_LoadMVP(const struct Matrix* view, const struct Matrix* proj, struct Matrix* mvp) {
+	Gfx_LoadMatrix(MATRIX_VIEW, view);
+	Gfx_LoadMatrix(MATRIX_PROJ, proj);
+	Matrix_Mul(mvp, view, proj);
 }
 
 void Gfx_EnableTextureOffset(float x, float y) {
@@ -668,7 +674,7 @@ static void DrawColouredTriangles(int verticesCount, int startVertex) {
 
 static void DrawTriangles(int verticesCount, int startVertex) {
 	if (stateDirty)  UpdateState(0);
-	if (formatDirty) UpdateFormat();
+	if (formatDirty) UpdateFormat(0);
 
 	if ((q - current->data) > 45000) {
 		DMATAG_END(dma_tag, (q - current->data) - 1, 0, 0, 0);
@@ -733,9 +739,8 @@ cc_result Gfx_TakeScreenshot(struct Stream* output) {
 	return ERR_NOT_SUPPORTED;
 }
 
-cc_bool Gfx_WarnIfNecessary(void) {
-	return false;
-}
+cc_bool Gfx_WarnIfNecessary(void) { return false; }
+cc_bool Gfx_GetUIOptions(struct MenuOptionsScreen* s) { return false; }
 
 void Gfx_BeginFrame(void) { 
 	//Platform_LogConst("--- Frame ---");

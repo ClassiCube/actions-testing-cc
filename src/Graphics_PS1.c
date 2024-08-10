@@ -18,7 +18,7 @@
 // Length of the ordering table, i.e. the range Z coordinates can have, 0-15 in
 // this case. Larger values will allow for more granularity with depth (useful
 // when drawing a complex 3D scene) at the expense of RAM usage and performance.
-#define OT_LENGTH 1024
+#define OT_LENGTH 512
 
 // Size of the buffer GPU commands and primitives are written to. If the program
 // crashes due to too many primitives being drawn, increase this value.
@@ -92,15 +92,14 @@ void Gfx_Create(void) {
 	Gfx.Created      = true;
 	
 	Gfx_RestoreState();
-	ResetGraph(0);
 
 	SetupContexts(Window_Main.Width, Window_Main.Height, 63, 0, 127);
 	SetDispMask(1);
 
 	InitGeom();
-	//gte_SetGeomOffset(Window_Main.Width / 2, Window_Main.Height / 2);
+	gte_SetGeomOffset(Window_Main.Width / 2, Window_Main.Height / 2);
 	// Set screen depth (basically FOV control, W/2 works best)
-	//gte_SetGeomScreen(Window_Main.Width / 2);
+	gte_SetGeomScreen(Window_Main.Width / 2);
 }
 
 void Gfx_Free(void) { 
@@ -203,28 +202,25 @@ static int VRAM_CalcPage(int line) {
 #define TEXTURES_MAX_COUNT 64
 typedef struct GPUTexture {
 	cc_uint16 width, height;
-	cc_uint8 width_mask, height_mask;
+	cc_uint8 width_shift, height_shift;
 	cc_uint16 line, tpage;
 	cc_uint8 xOffset, yOffset;
 } GPUTexture;
 static GPUTexture textures[TEXTURES_MAX_COUNT];
 static GPUTexture* curTex;
 
-#define BGRA8_to_PS1(src) \
-	((src[2] & 0xF8) >> 3) | ((src[1] & 0xF8) << 2) | ((src[0] & 0xF8) << 7) | ((src[3] & 0x80) << 8)
-
 static void* AllocTextureAt(int i, struct Bitmap* bmp, int rowWidth) {
 	cc_uint16* tmp = Mem_TryAlloc(bmp->width * bmp->height, 2);
 	if (!tmp) return NULL;
 
+	// TODO: Only copy when rowWidth != bmp->width
 	for (int y = 0; y < bmp->height; y++)
 	{
-		cc_uint32* src = bmp->scan0 + y * rowWidth;
+		cc_uint16* src = bmp->scan0 + y * rowWidth;
 		cc_uint16* dst = tmp        + y * bmp->width;
 		
 		for (int x = 0; x < bmp->width; x++) {
-			cc_uint8* color = (cc_uint8*)&src[x];
-			dst[x] = BGRA8_to_PS1(color);
+			dst[x] = src[x];
 		}
 	}
 
@@ -232,8 +228,8 @@ static void* AllocTextureAt(int i, struct Bitmap* bmp, int rowWidth) {
 	int line = VRAM_FindFreeBlock(bmp->width, bmp->height);
 	if (line == -1) { Mem_Free(tmp); return NULL; }
 	
-	tex->width  = bmp->width;  tex->width_mask  = bmp->width  - 1;
-	tex->height = bmp->height; tex->height_mask = bmp->height - 1;
+	tex->width  = bmp->width;  tex->width_shift  = Math_ilog2(bmp->width);
+	tex->height = bmp->height; tex->height_shift = Math_ilog2(bmp->height);
 	tex->line   = line;
 	
 	int page   = VRAM_CalcPage(line);
@@ -366,7 +362,53 @@ void Gfx_DeleteIb(GfxResourceID* ib) { }
 /*########################################################################################################################*
 *-------------------------------------------------------Vertex buffers----------------------------------------------------*
 *#########################################################################################################################*/
+// Preprocess vertex buffers into optimised layout for PS1
+struct PS1VertexColoured { int x, y, z; PackedCol Col; };
+struct PS1VertexTextured { int x, y, z; PackedCol Col; int u, v; };
+static VertexFormat buf_fmt;
+static int buf_count;
+
 static void* gfx_vertices;
+
+#define XYZInteger(value) ((value) >> 6)
+#define XYZFixed(value) ((int)((value) * (1 << 6)))
+#define UVFixed(value)  ((int)((value) * 1024.0f) & 0x3FF) // U/V wrapping not supported
+
+static void PreprocessTexturedVertices(void) {
+	struct PS1VertexTextured* dst = gfx_vertices;
+	struct VertexTextured* src    = gfx_vertices;
+
+	// PS1 need to use raw U/V coordinates
+	//   i.e. U = (src->U * tex->width) % tex->width
+	// To avoid expensive floating point conversions,
+	//  convert the U coordinates to fixed point
+	//  (using 10 bits for the fractional coordinate)
+	// Converting from fixed point using 1024 as base
+	//  to tex->width/height as base is relatively simple:
+	//  value / 1024 = X / tex_size
+	//  X = value * tex_size / 1024
+	for (int i = 0; i < buf_count; i++, src++, dst++)
+	{
+		dst->x = XYZFixed(src->x);
+		dst->y = XYZFixed(src->y);
+		dst->z = XYZFixed(src->z);
+		dst->u = UVFixed(src->U * 0.99f);
+		dst->v = UVFixed(src->V        );
+	}
+}
+
+static void PreprocessColouredVertices(void) {
+	struct PS1VertexColoured* dst = gfx_vertices;
+	struct VertexColoured* src    = gfx_vertices;
+
+	for (int i = 0; i < buf_count; i++, src++, dst++)
+	{
+		dst->x = XYZFixed(src->x);
+		dst->y = XYZFixed(src->y);
+		dst->z = XYZFixed(src->z);
+	}
+}
+
 
 static GfxResourceID Gfx_AllocStaticVb(VertexFormat fmt, int count) {
 	return Mem_TryAlloc(count, strideSizes[fmt]);
@@ -381,11 +423,19 @@ void Gfx_DeleteVb(GfxResourceID* vb) {
 }
 
 void* Gfx_LockVb(GfxResourceID vb, VertexFormat fmt, int count) {
+    buf_fmt   = fmt;
+    buf_count = count;
 	return vb;
 }
 
 void Gfx_UnlockVb(GfxResourceID vb) { 
-	gfx_vertices = vb; 
+    gfx_vertices = vb;
+
+    if (buf_fmt == VERTEX_FORMAT_TEXTURED) {
+        PreprocessTexturedVertices();
+    } else {
+        PreprocessColouredVertices();
+    }
 }
 
 
@@ -396,29 +446,51 @@ static GfxResourceID Gfx_AllocDynamicVb(VertexFormat fmt, int maxVertices) {
 void Gfx_BindDynamicVb(GfxResourceID vb) { Gfx_BindVb(vb); }
 
 void* Gfx_LockDynamicVb(GfxResourceID vb, VertexFormat fmt, int count) {
-	return vb; 
+	return Gfx_LockVb(vb, fmt, count);
 }
 
-void Gfx_UnlockDynamicVb(GfxResourceID vb) { 
-	gfx_vertices = vb;
-}
+void Gfx_UnlockDynamicVb(GfxResourceID vb) { Gfx_UnlockVb(vb); }
 
 void Gfx_DeleteDynamicVb(GfxResourceID* vb) { Gfx_DeleteVb(vb); }
+
 
 
 /*########################################################################################################################*
 *---------------------------------------------------------Matrices--------------------------------------------------------*
 *#########################################################################################################################*/
-static struct Matrix _view, _proj, mvp;
+static struct Matrix _view, _proj;
+struct MatrixRow { int x, y, z, w; };
+static struct MatrixRow mvp_row1, mvp_row2, mvp_row3, mvp_trans;
+
 #define ToFixed(v) (int)(v * (1 << 12))
 
 static void LoadTransformMatrix(struct Matrix* src) {
 	// https://math.stackexchange.com/questions/237369/given-this-transformation-matrix-how-do-i-decompose-it-into-translation-rotati
 	MATRIX mtx;
 
-	mtx.t[0] = 0;
-	mtx.t[1] = 0;
-	mtx.t[2] = 0;
+	mtx.t[0] = ToFixed(src->row4.x);
+	mtx.t[1] = ToFixed(src->row4.y);
+	mtx.t[2] = ToFixed(src->row4.z);
+	
+	mvp_trans.x = XYZFixed(1) * ToFixed(src->row4.x);
+	mvp_trans.y = XYZFixed(1) * ToFixed(src->row4.y);
+	mvp_trans.z = XYZFixed(1) * ToFixed(src->row4.z);
+	mvp_trans.w = XYZFixed(1) * ToFixed(src->row4.w);
+	
+	mvp_row1.x = ToFixed(src->row1.x);
+	mvp_row1.y = ToFixed(src->row1.y);
+	mvp_row1.z = ToFixed(src->row1.z);
+	mvp_row1.w = ToFixed(src->row1.w);
+	
+	mvp_row2.x = ToFixed(src->row2.x);
+	mvp_row2.y = ToFixed(src->row2.y);
+	mvp_row2.z = ToFixed(src->row2.z);
+	mvp_row2.w = ToFixed(src->row2.w);
+	
+	mvp_row3.x = ToFixed(src->row3.x);
+	mvp_row3.y = ToFixed(src->row3.y);
+	mvp_row3.z = ToFixed(src->row3.z);
+	mvp_row3.w = ToFixed(src->row3.w);
 
 	//Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row1.x, &src->row1.y, &src->row1.z);
 	//Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row2.x, &src->row2.y, &src->row2.z);
@@ -426,70 +498,42 @@ static void LoadTransformMatrix(struct Matrix* src) {
 	//Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row4.x, &src->row4.y, &src->row4.z);
 	//Platform_LogConst("====");
 
-	float len1 = Math_SqrtF(src->row1.x + src->row1.y + src->row1.z);
-	float len2 = Math_SqrtF(src->row2.x + src->row2.y + src->row2.z);
-	float len3 = Math_SqrtF(src->row3.x + src->row3.y + src->row3.z);
+	mtx.m[0][0] = ToFixed(src->row1.x);
+	mtx.m[0][1] = ToFixed(src->row1.y);
+	mtx.m[0][2] = ToFixed(src->row1.z);
 
-	mtx.m[0][0] = ToFixed(1);
-	mtx.m[0][1] = 0;
-	mtx.m[0][2] = 0;
+	mtx.m[1][0] = ToFixed(src->row2.x);
+	mtx.m[1][1] = ToFixed(src->row2.y);
+	mtx.m[1][2] = ToFixed(src->row2.z);
 
-	mtx.m[1][0] = 0;
-	mtx.m[1][1] = ToFixed(1);
-	mtx.m[1][2] = 0;
-
-	mtx.m[2][0] = 0;
-	mtx.m[2][1] = ToFixed(1);
-	mtx.m[2][2] = 1;
+	mtx.m[2][0] = ToFixed(src->row3.x);
+	mtx.m[2][1] = ToFixed(src->row3.y);
+	mtx.m[2][2] = ToFixed(src->row3.z);
 	
 	gte_SetRotMatrix(&mtx);
 	gte_SetTransMatrix(&mtx);
 }
 
-/*static void LoadTransformMatrix(struct Matrix* src) {
-	// https://math.stackexchange.com/questions/237369/given-this-transformation-matrix-how-do-i-decompose-it-into-translation-rotati
-	MATRIX mtx;
-
-	mtx.t[0] = ToFixed(src->row4.x);
-	mtx.t[1] = ToFixed(src->row4.y);
-	mtx.t[2] = ToFixed(src->row4.z);
-
-	Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row1.x, &src->row1.y, &src->row1.z);
-	Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row2.x, &src->row2.y, &src->row2.z);
-	Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row3.x, &src->row3.y, &src->row3.z);
-	Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row4.x, &src->row4.y, &src->row4.z);
-	Platform_LogConst("====");
-
-	float len1 = Math_SqrtF(src->row1.x + src->row1.y + src->row1.z);
-	float len2 = Math_SqrtF(src->row2.x + src->row2.y + src->row2.z);
-	float len3 = Math_SqrtF(src->row3.x + src->row3.y + src->row3.z);
-
-	mtx.m[0][0] = ToFixed(src->row1.x / len1);
-	mtx.m[0][1] = ToFixed(src->row1.y / len1);
-	mtx.m[0][2] = ToFixed(src->row1.z / len1);
-
-	mtx.m[1][0] = ToFixed(src->row2.x / len2);
-	mtx.m[1][1] = ToFixed(src->row2.y / len2);
-	mtx.m[1][2] = ToFixed(src->row2.z / len2);
-
-	mtx.m[2][0] = ToFixed(src->row3.x / len3);
-	mtx.m[2][1] = ToFixed(src->row3.y / len3);
-	mtx.m[2][2] = ToFixed(src->row3.z / len3);
-	
-	gte_SetRotMatrix(&mtx);
-	gte_SetTransMatrix(&mtx);
-}*/
-
 void Gfx_LoadMatrix(MatrixType type, const struct Matrix* matrix) {
-	if (type == MATRIX_VIEW)       _view = *matrix;
-	if (type == MATRIX_PROJECTION) _proj = *matrix;
+	if (type == MATRIX_VIEW) _view = *matrix;
+	if (type == MATRIX_PROJ) _proj = *matrix;
 
-	Matrix_Mul(&mvp, &_view, &_proj);
+	struct Matrix mvp;
+	if (matrix == &Matrix_Identity && type == MATRIX_VIEW) {
+		mvp = _proj; // 2D mode uses identity view matrix
+	} else {
+		Matrix_Mul(&mvp, &_view, &_proj);
+	}
+	
 	LoadTransformMatrix(&mvp);
 }
 
-void Gfx_LoadIdentityMatrix(MatrixType type) {
-	Gfx_LoadMatrix(type, &Matrix_Identity);
+void Gfx_LoadMVP(const struct Matrix* view, const struct Matrix* proj, struct Matrix* mvp) {
+	_view = *view;
+	_proj = *proj;
+
+	Matrix_Mul(mvp, view, proj);
+	LoadTransformMatrix(mvp);
 }
 
 void Gfx_EnableTextureOffset(float x, float y) {
@@ -517,7 +561,7 @@ void Gfx_CalcOrthoMatrix(struct Matrix* matrix, float width, float height, float
 
 static float Cotangent(float x) { return Math_CosF(x) / Math_SinF(x); }
 void Gfx_CalcPerspectiveMatrix(struct Matrix* matrix, float fov, float aspect, float zFar) {
-	float zNear = 0.01f;
+	float zNear = 0.05f;
 	/* Source https://learn.microsoft.com/en-us/windows/win32/direct3d9/d3dxmatrixperspectivefovrh */
 	float c = (float)Cotangent(0.5f * fov);
 	*matrix = Matrix_Identity;
@@ -543,33 +587,32 @@ void Gfx_DrawVb_Lines(int verticesCount) {
 
 }
 
-static void Transform(Vec3* result, struct VertexTextured* a, const struct Matrix* mat) {
-	/* a could be pointing to result - therefore can't directly assign X/Y/Z */
-	float x = a->x * mat->row1.x + a->y * mat->row2.x + a->z * mat->row3.x + mat->row4.x;
-	float y = a->x * mat->row1.y + a->y * mat->row2.y + a->z * mat->row3.y + mat->row4.y;
-	float z = a->x * mat->row1.z + a->y * mat->row2.z + a->z * mat->row3.z + mat->row4.z;
-	float w = a->x * mat->row1.w + a->y * mat->row2.w + a->z * mat->row3.w + mat->row4.w;
+static int Transform(IVec3* result, struct PS1VertexTextured* a) {
+	int x = a->x * mvp_row1.x + a->y * mvp_row2.x + a->z * mvp_row3.x + mvp_trans.x;
+	int y = a->x * mvp_row1.y + a->y * mvp_row2.y + a->z * mvp_row3.y + mvp_trans.y;
+	int z = a->x * mvp_row1.z + a->y * mvp_row2.z + a->z * mvp_row3.z + mvp_trans.z;
+	int w = a->x * mvp_row1.w + a->y * mvp_row2.w + a->z * mvp_row3.w + mvp_trans.w;
+	if (w <= 0) return 1;
 	
-	result->x = (x/w) *  (320/2) + (320/2); 
-	result->y = (y/w) * -(240/2) + (240/2);
-	result->z = (z/w) * OT_LENGTH;
+	result->x = (x *  160      / w) + 160; 
+	result->y = (y * -120      / w) + 120;
+	result->z = (z * OT_LENGTH / w);
+	return z > w;
 }
-
-cc_bool VERTEX_LOGGING;
 
 static void DrawColouredQuads2D(int verticesCount, int startVertex) {
 	return;
 	for (int i = 0; i < verticesCount; i += 4) 
 	{
-		struct VertexColoured* v = (struct VertexColoured*)gfx_vertices + startVertex + i;
+		struct PS1VertexColoured* v = (struct PS1VertexColoured*)gfx_vertices + startVertex + i;
 		
 		POLY_F4* poly = new_primitive(sizeof(POLY_F4));
 		setPolyF4(poly);
 
-		poly->x0 = v[1].x; poly->y0 = v[1].y;
-		poly->x1 = v[0].x; poly->y1 = v[0].y;
-		poly->x2 = v[2].x; poly->y2 = v[2].y;
-		poly->x3 = v[3].x; poly->y3 = v[3].y;
+		poly->x0 = XYZInteger(v[1].x); poly->y0 = XYZInteger(v[1].y);
+		poly->x1 = XYZInteger(v[0].x); poly->y1 = XYZInteger(v[0].y);
+		poly->x2 = XYZInteger(v[2].x); poly->y2 = XYZInteger(v[2].y);
+		poly->x3 = XYZInteger(v[3].x); poly->y3 = XYZInteger(v[3].y);
 
 		poly->r0 = PackedCol_R(v->Col);
 		poly->g0 = PackedCol_G(v->Col);
@@ -586,30 +629,31 @@ static void DrawColouredQuads2D(int verticesCount, int startVertex) {
 
 static void DrawTexturedQuads2D(int verticesCount, int startVertex) {
 	int uOffset = curTex->xOffset, vOffset = curTex->yOffset;
+	int uShift  = 10 - curTex->width_shift;
+	int vShift  = 10 - curTex->height_shift;
 
 	for (int i = 0; i < verticesCount; i += 4) 
 	{
-		struct VertexTextured* v = (struct VertexTextured*)gfx_vertices + startVertex + i;
+		struct PS1VertexTextured* v = (struct PS1VertexTextured*)gfx_vertices + startVertex + i;
 		
 		POLY_FT4* poly = new_primitive(sizeof(POLY_FT4));
 		setPolyFT4(poly);
 		poly->tpage = curTex->tpage;
 		poly->clut  = 0;
 
-		// TODO & instead of % 
-		poly->x0 = v[1].x; poly->y0 = v[1].y; 
-		poly->x1 = v[0].x; poly->y1 = v[0].y; 
-		poly->x2 = v[2].x; poly->y2 = v[2].y; 
-		poly->x3 = v[3].x; poly->y3 = v[3].y; 
+		poly->x0 = XYZInteger(v[1].x); poly->y0 = XYZInteger(v[1].y);
+		poly->x1 = XYZInteger(v[0].x); poly->y1 = XYZInteger(v[0].y);
+		poly->x2 = XYZInteger(v[2].x); poly->y2 = XYZInteger(v[2].y);
+		poly->x3 = XYZInteger(v[3].x); poly->y3 = XYZInteger(v[3].y);
 		
-		poly->u0 = ((int)(v[1].U * 0.99f * curTex->width)  & curTex->width_mask)  + uOffset;
-		poly->v0 = ((int)(v[1].V         * curTex->height) & curTex->height_mask) + vOffset;
-		poly->u1 = ((int)(v[0].U * 0.99f * curTex->width)  & curTex->width_mask)  + uOffset;
-		poly->v1 = ((int)(v[0].V         * curTex->height) & curTex->height_mask) + vOffset;
-		poly->u2 = ((int)(v[2].U * 0.99f * curTex->width)  & curTex->width_mask)  + uOffset;
-		poly->v2 = ((int)(v[2].V         * curTex->height) & curTex->height_mask) + vOffset;
-		poly->u3 = ((int)(v[3].U * 0.99f * curTex->width)  & curTex->width_mask)  + uOffset;
-		poly->v3 = ((int)(v[3].V         * curTex->height) & curTex->height_mask) + vOffset;
+		poly->u0 = (v[1].u >> uShift) + uOffset;
+		poly->v0 = (v[1].v >> vShift) + vOffset;
+		poly->u1 = (v[0].u >> uShift) + uOffset;
+		poly->v1 = (v[0].v >> vShift) + vOffset;
+		poly->u2 = (v[2].u >> uShift) + uOffset;
+		poly->v2 = (v[2].v >> vShift) + vOffset;
+		poly->u3 = (v[3].u >> uShift) + uOffset;
+		poly->v3 = (v[3].v >> vShift) + vOffset;
 
 		// https://problemkaputt.de/psxspx-gpu-rendering-attributes.htm
 		// "For untextured graphics, 8bit RGB values of FFh are brightest. However, for texture blending, 8bit values of 80h are brightest"
@@ -634,11 +678,13 @@ static void DrawColouredQuads3D(int verticesCount, int startVertex) {
 		POLY_F4* poly = new_primitive(sizeof(POLY_F4));
 		setPolyF4(poly);
 
-		Vec3 coords[4];
-		Transform(&coords[0], &v[0], &mvp);
-		Transform(&coords[1], &v[1], &mvp);
-		Transform(&coords[2], &v[2], &mvp);
-		Transform(&coords[3], &v[3], &mvp);
+		IVec3 coords[4];
+		int clipped = 0;
+		clipped |= Transform(&coords[0], &v[0]);
+		clipped |= Transform(&coords[1], &v[1]);
+		clipped |= Transform(&coords[2], &v[2]);
+		clipped |= Transform(&coords[3], &v[3]);
+		if (clipped) continue;
 
 		poly->x0 = coords[1].x; poly->y0 = coords[1].y;
 		poly->x1 = coords[0].x; poly->y1 = coords[0].y;
@@ -648,14 +694,9 @@ static void DrawColouredQuads3D(int verticesCount, int startVertex) {
 		int p = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4;
 		if (p < 0 || p >= OT_LENGTH) continue;
 
-		int X = v[0].x, Y = v[0].y, Z = v[0].z;
-		//if (VERTEX_LOGGING) Platform_Log3("IN: %i, %i, %i", &X, &Y, &Z);
-		X = poly->x1; Y = poly->y1, Z = coords[0].z;
-
 		poly->r0 = PackedCol_R(v->Col);
 		poly->g0 = PackedCol_G(v->Col);
 		poly->b0 = PackedCol_B(v->Col);
-		//if (VERTEX_LOGGING) Platform_Log4("OUT: %i, %i, %i (%i)", &X, &Y, &Z, &p);
 
 		addPrim(&buffer->ot[p >> 2], poly);
 	}
@@ -663,21 +704,25 @@ static void DrawColouredQuads3D(int verticesCount, int startVertex) {
 
 static void DrawTexturedQuads3D(int verticesCount, int startVertex) {
 	int uOffset = curTex->xOffset, vOffset = curTex->yOffset;
+	int uShift  = 10 - curTex->width_shift;
+	int vShift  = 10 - curTex->height_shift;
 
 	for (int i = 0; i < verticesCount; i += 4) 
 	{
-		struct VertexTextured* v = (struct VertexTextured*)gfx_vertices + startVertex + i;
+		struct PS1VertexTextured* v = (struct PS1VertexTextured*)gfx_vertices + startVertex + i;
 		
 		POLY_FT4* poly = new_primitive(sizeof(POLY_FT4));
 		setPolyFT4(poly);
 		poly->tpage = curTex->tpage;
 		poly->clut  = 0;
 
-		Vec3 coords[4];
-		Transform(&coords[0], &v[0], &mvp);
-		Transform(&coords[1], &v[1], &mvp);
-		Transform(&coords[2], &v[2], &mvp);
-		Transform(&coords[3], &v[3], &mvp);
+		IVec3 coords[4];
+		int clipped = 0;
+		clipped |= Transform(&coords[0], &v[0]);
+		clipped |= Transform(&coords[1], &v[1]);
+		clipped |= Transform(&coords[2], &v[2]);
+		clipped |= Transform(&coords[3], &v[3]);
+		if (clipped) continue;
 
 		// TODO & instead of % 
 		poly->x0 = coords[1].x; poly->y0 = coords[1].y;
@@ -687,35 +732,27 @@ static void DrawTexturedQuads3D(int verticesCount, int startVertex) {
 		
 		if (cullingEnabled) {
 			// https://gamedev.stackexchange.com/questions/203694/how-to-make-backface-culling-work-correctly-in-both-orthographic-and-perspective
-			int signA = (poly->x0 - poly->x1) * (poly->y2 - poly->y1);
-			int signB = (poly->x2 - poly->x1) * (poly->y0 - poly->y1);
+			int signA = (coords[1].x - coords[0].x) * (coords[2].y - coords[0].y);
+			int signB = (coords[2].x - coords[0].x) * (coords[1].y - coords[0].y);
 			if (signA > signB) continue;
 		}
 		
-		poly->u0 = ((int)(v[1].U * curTex->width)  & curTex->width_mask)  + uOffset;
-		poly->v0 = ((int)(v[1].V * curTex->height) & curTex->height_mask) + vOffset;
-		poly->u1 = ((int)(v[0].U * curTex->width)  & curTex->width_mask)  + uOffset;
-		poly->v1 = ((int)(v[0].V * curTex->height) & curTex->height_mask) + vOffset;
-		poly->u2 = ((int)(v[2].U * curTex->width)  & curTex->width_mask)  + uOffset;
-		poly->v2 = ((int)(v[2].V * curTex->height) & curTex->height_mask) + vOffset;
-		poly->u3 = ((int)(v[3].U * curTex->width)  & curTex->width_mask)  + uOffset;
-		poly->v3 = ((int)(v[3].V * curTex->height) & curTex->height_mask) + vOffset;
+		poly->u0 = (v[1].u >> uShift) + uOffset;
+		poly->v0 = (v[1].v >> vShift) + vOffset;
+		poly->u1 = (v[0].u >> uShift) + uOffset;
+		poly->v1 = (v[0].v >> vShift) + vOffset;
+		poly->u2 = (v[2].u >> uShift) + uOffset;
+		poly->v2 = (v[2].v >> vShift) + vOffset;
+		poly->u3 = (v[3].u >> uShift) + uOffset;
+		poly->v3 = (v[3].v >> vShift) + vOffset;
 		
-		//int P = curTex->height, page = poly->tpage & 0xFF, ll = curTex->yOffset;
-		//Platform_Log4("XYZ: %f3 x %i, %i, %i", &v[0].V, &P, &page, &ll);
 		int p = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4;
 		if (p < 0 || p >= OT_LENGTH) continue;
-
-		int X = v[0].x, Y = v[0].y, Z = v[0].z;
-		//if (VERTEX_LOGGING) Platform_Log3("IN: %i, %i, %i", &X, &Y, &Z);
-		X = poly->x1; Y = poly->y1, Z = coords[0].z;
 
 		poly->r0 = PackedCol_R(v->Col) >> 1;
 		poly->g0 = PackedCol_G(v->Col) >> 1;
 		poly->b0 = PackedCol_B(v->Col) >> 1;
-		//if (VERTEX_LOGGING) Platform_Log4("OUT: %i, %i, %i (%i)", &X, &Y, &Z, &p);
 
-		// TODO: 2D shouldn't use AddPrim, draws in the wrong way
 		addPrim(&buffer->ot[p >> 2], poly);
 	}
 }
@@ -821,9 +858,8 @@ cc_result Gfx_TakeScreenshot(struct Stream* output) {
 	return ERR_NOT_SUPPORTED;
 }
 
-cc_bool Gfx_WarnIfNecessary(void) {
-	return false;
-}
+cc_bool Gfx_WarnIfNecessary(void) { return false; }
+cc_bool Gfx_GetUIOptions(struct MenuOptionsScreen* s) { return false; }
 
 void Gfx_BeginFrame(void) {
 	lastPoly = NULL;

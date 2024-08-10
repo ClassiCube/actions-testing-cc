@@ -246,6 +246,7 @@ void Gfx_Free(void) { Gfx_FreeState(); }
 
 cc_bool Gfx_TryRestoreContext(void) { return true; }
 cc_bool Gfx_WarnIfNecessary(void)   { return false; }
+cc_bool Gfx_GetUIOptions(struct MenuOptionsScreen* s) { return false; }
 
 void Gfx_RestoreState(void) {
 	InitDefaultResources();
@@ -562,7 +563,8 @@ static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8
 	
 	tex->width  = bmp->width;
 	tex->height = bmp->height;
-	CopyTextureData(tex->pixels, bmp->width * 4, bmp, rowWidth << 2);
+	CopyTextureData(tex->pixels, bmp->width * BITMAPCOLOR_SIZE, 
+					bmp, rowWidth * BITMAPCOLOR_SIZE);
 	return tex;
 }
 
@@ -613,8 +615,9 @@ void Gfx_UpdateTexture(GfxResourceID texId, int x, int y, struct Bitmap* part, i
 	CCTexture* tex = (CCTexture*)texId;
 	
 	// NOTE: Only valid for LINEAR textures
-	cc_uint32* dst = (tex->pixels + x) + y * tex->width;	
-	CopyTextureData(dst, tex->width * 4, part, rowWidth << 2);
+	BitmapCol* dst = (tex->pixels + x) + y * tex->width;	
+	CopyTextureData(dst, tex->width * BITMAPCOLOR_SIZE, 
+					part, rowWidth  * BITMAPCOLOR_SIZE);
 	
 	rsxInvalidateTextureCache(context, GCM_INVALIDATE_TEXTURE);
 	/* TODO */
@@ -649,15 +652,17 @@ void Gfx_SetFogMode(FogFunc func) {/* TODO */
 static struct Matrix _view, _proj;
 
 void Gfx_LoadMatrix(MatrixType type, const struct Matrix* matrix) {
-	struct Matrix* dst = type == MATRIX_PROJECTION ? &_proj : &_view;
+	struct Matrix* dst = type == MATRIX_PROJ ? &_proj : &_view;
 	*dst = *matrix;
 
 	Matrix_Mul(&mvp, &_view, &_proj);
 	VP_UpdateUniforms();
 }
 
-void Gfx_LoadIdentityMatrix(MatrixType type) {
-	Gfx_LoadMatrix(type, &Matrix_Identity);
+void Gfx_LoadMVP(const struct Matrix* view, const struct Matrix* proj, struct Matrix* mvp) {
+	Gfx_LoadMatrix(MATRIX_VIEW, view);
+	Gfx_LoadMatrix(MATRIX_PROJ, proj);
+	Matrix_Mul(mvp, view, proj);
 }
 
 void Gfx_EnableTextureOffset(float x, float y) {

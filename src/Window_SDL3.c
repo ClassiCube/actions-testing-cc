@@ -25,10 +25,11 @@ static void Window_SDLFail(const char* place) {
 }
 
 void Window_PreInit(void) {
-	SDL_Init(SDL_INIT_VIDEO);
+	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
 	#ifdef CC_BUILD_FLATPAK
 	SDL_SetHint(SDL_HINT_APP_ID, "net.classicube.flatpak.client");
 	#endif
+	DisplayInfo.CursorVisible = true;
 }
 
 void Window_Init(void) {
@@ -52,8 +53,9 @@ void Window_Free(void) { }
 #include "../misc/sdl/CCIcon_SDL.h"
 
 static void ApplyIcon(void) {
-	SDL_Surface* surface = SDL_CreateSurfaceFrom(CCIcon_Data, CCIcon_Width, CCIcon_Height, 
-												CCIcon_Pitch, SDL_PIXELFORMAT_BGRA8888);
+	SDL_Surface* surface = SDL_CreateSurfaceFrom(CCIcon_Width, CCIcon_Height, SDL_PIXELFORMAT_BGRA8888,
+												 (void*)CCIcon_Data, CCIcon_Pitch);
+
 	SDL_SetWindowIcon(win_handle, surface);
 }
 #else
@@ -84,11 +86,15 @@ static void DoCreateWindow(int width, int height, int flags) {
 }
 
 void Window_Create2D(int width, int height) { DoCreateWindow(width, height, 0); }
-#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK)
+#if CC_GFX_BACKEND_IS_GL()
 void Window_Create3D(int width, int height) { DoCreateWindow(width, height, SDL_WINDOW_OPENGL); }
 #else
 void Window_Create3D(int width, int height) { DoCreateWindow(width, height, 0); }
 #endif
+
+void Window_Destroy(void) {
+	SDL_DestroyWindow(win_handle);
+}
 
 void Window_SetTitle(const cc_string* title) {
 	char str[NATIVE_STR_LEN];
@@ -147,7 +153,7 @@ void Window_RequestClose(void) {
 
 static int MapNativeKey(SDL_Keycode k) {
 	if (k >= SDLK_0   && k <= SDLK_9)   { return '0'       + (k - SDLK_0); }
-	if (k >= SDLK_a   && k <= SDLK_z)   { return 'A'       + (k - SDLK_a); }
+	if (k >= SDLK_A   && k <= SDLK_Z)   { return 'A'       + (k - SDLK_A); }
 	if (k >= SDLK_F1  && k <= SDLK_F12) { return CCKEY_F1  + (k - SDLK_F1); }
 	if (k >= SDLK_F13 && k <= SDLK_F24) { return CCKEY_F13 + (k - SDLK_F13); }
 	/* SDLK_KP_0 isn't before SDLK_KP_1 */
@@ -278,7 +284,6 @@ void Window_ProcessEvents(float delta) {
 		case SDL_EVENT_QUIT:
 			Window_Main.Exists = false;
 			Event_RaiseVoid(&WindowEvents.Closing);
-			SDL_DestroyWindow(win_handle);
 			break;
 
 		case SDL_EVENT_RENDER_DEVICE_RESET:
@@ -316,8 +321,6 @@ void Window_ProcessEvents(float delta) {
 		}
 	}
 }
-
-void Window_ProcessGamepads(float delta) { }
 
 static void Cursor_GetRawPos(int* x, int* y) {
 	float xPos, yPos;
@@ -430,15 +433,14 @@ static SDL_Surface* win_surface;
 static SDL_Surface* blit_surface;
 
 void Window_AllocFramebuffer(struct Bitmap* bmp, int width, int height) {
-	SDL_PixelFormat* fmt;
 	win_surface = SDL_GetWindowSurface(win_handle);
 	if (!win_surface) Window_SDLFail("getting window surface");
 
-	fmt = win_surface->format;
-	if (fmt->bits_per_pixel != 32) {
+	int bits_per_pixel = SDL_BITSPERPIXEL(win_surface->format);
+	if (bits_per_pixel != 32) {
 		/* Slow path: e.g. 15 or 16 bit pixels */
-		Platform_Log1("Slow color depth: %b bpp", &fmt->bits_per_pixel);
-		blit_surface = SDL_CreateSurface(win_surface->w, win_surface->h, SDL_PIXELFORMAT_RGBA32);
+		Platform_Log1("Slow color depth: %b bpp", &bits_per_pixel);
+		blit_surface = SDL_CreateSurface(win_surface->w, win_surface->h, SDL_PIXELFORMAT_BGRA32);
 		if (!blit_surface) Window_SDLFail("creating blit surface");
 
 		SDL_SetSurfaceBlendMode(blit_surface, SDL_BLENDMODE_NONE);
@@ -474,11 +476,9 @@ void Window_FreeFramebuffer(struct Bitmap* bmp) {
 	/* TODO: Do we still need to unlock it though? */
 }
 
-void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) { SDL_StartTextInput(); }
+void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) { SDL_StartTextInput(win_handle); }
 void OnscreenKeyboard_SetText(const cc_string* text) { }
-void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) { }
-void OnscreenKeyboard_Draw3D(void) { }
-void OnscreenKeyboard_Close(void) { SDL_StopTextInput(); }
+void OnscreenKeyboard_Close(void) { SDL_StopTextInput(win_handle); }
 
 void Window_EnableRawMouse(void) {
 	RegrabMouse();
@@ -495,9 +495,79 @@ void Window_DisableRawMouse(void) {
 
 
 /*########################################################################################################################*
+*--------------------------------------------------------Gamepads---------------------------------------------------------*
+*#########################################################################################################################*/
+#include "ExtMath.h"
+static SDL_Gamepad* controllers[INPUT_MAX_GAMEPADS];
+
+static void LoadControllers(void) {
+	int count = 0;
+	SDL_JoystickID* joysticks = SDL_GetGamepads(&count);
+
+    for (int i = 0; i < count && i < INPUT_MAX_GAMEPADS; i++) 
+	{
+		Input.Sources |= INPUT_SOURCE_GAMEPAD;
+		controllers[i] = SDL_OpenGamepad(joysticks[i]);
+    }
+	SDL_free(joysticks);
+}
+
+void Gamepads_Init(void) {
+	LoadControllers();
+}
+
+static void ProcessGamepadButtons(int port, SDL_Gamepad* gp) {
+	Gamepad_SetButton(port, CCPAD_1, SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_SOUTH));
+	Gamepad_SetButton(port, CCPAD_2, SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_EAST));
+	Gamepad_SetButton(port, CCPAD_3, SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_WEST));
+	Gamepad_SetButton(port, CCPAD_4, SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_NORTH));
+
+	Gamepad_SetButton(port, CCPAD_ZL, SDL_GetGamepadAxis(  gp, SDL_GAMEPAD_AXIS_LEFT_TRIGGER ) > 8000);
+	Gamepad_SetButton(port, CCPAD_ZR, SDL_GetGamepadAxis(  gp, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000);
+	Gamepad_SetButton(port, CCPAD_L,  SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
+	Gamepad_SetButton(port, CCPAD_R,  SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
+
+	Gamepad_SetButton(port, CCPAD_SELECT, SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_GUIDE));
+	Gamepad_SetButton(port, CCPAD_START,  SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_START));
+	Gamepad_SetButton(port, CCPAD_LSTICK, SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_LEFT_STICK));
+	Gamepad_SetButton(port, CCPAD_RSTICK, SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_RIGHT_STICK));
+	
+	Gamepad_SetButton(port, CCPAD_UP,    SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_DPAD_UP));
+	Gamepad_SetButton(port, CCPAD_DOWN,  SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_DPAD_DOWN));
+	Gamepad_SetButton(port, CCPAD_LEFT,  SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+	Gamepad_SetButton(port, CCPAD_RIGHT, SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_DPAD_RIGHT));
+}
+
+#define PAD_AXIS_SCALE 32768.0f
+static void ProcessJoystick(int port, SDL_Gamepad* gp, int axis, float delta) {
+	int x = SDL_GetGamepadAxis(gp, axis == PAD_AXIS_LEFT ? SDL_GAMEPAD_AXIS_LEFTX : SDL_GAMEPAD_AXIS_RIGHTX);
+	int y = SDL_GetGamepadAxis(gp, axis == PAD_AXIS_LEFT ? SDL_GAMEPAD_AXIS_LEFTY : SDL_GAMEPAD_AXIS_RIGHTY);
+
+	// May not be exactly 0 on actual hardware
+	if (Math_AbsI(x) <= 1024) x = 0;
+	if (Math_AbsI(y) <= 1024) y = 0;
+	
+	Gamepad_SetAxis(port, axis, x / PAD_AXIS_SCALE, -y / PAD_AXIS_SCALE, delta);
+}
+
+void Gamepads_Process(float delta) {
+	for (int i = 0; i < INPUT_MAX_GAMEPADS; i++)
+	{
+		SDL_Gamepad* gp = controllers[i];
+		if (!gp) continue;
+		int port = Gamepad_Connect(0x5D13 + i, PadBind_Defaults);
+
+		ProcessGamepadButtons(port, gp);
+		ProcessJoystick(port, gp, PAD_AXIS_LEFT,  delta);
+		ProcessJoystick(port, gp, PAD_AXIS_RIGHT, delta);
+	}
+}
+
+
+/*########################################################################################################################*
 *-----------------------------------------------------OpenGL context------------------------------------------------------*
 *#########################################################################################################################*/
-#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK) && !defined CC_BUILD_EGL
+#if CC_GFX_BACKEND_IS_GL() && !defined CC_BUILD_EGL
 static SDL_GLContext win_ctx;
 
 void GLContext_Create(void) {
@@ -522,7 +592,7 @@ void GLContext_Create(void) {
 void GLContext_Update(void) { }
 cc_bool GLContext_TryRestore(void) { return true; }
 void GLContext_Free(void) {
-	SDL_GL_DeleteContext(win_ctx);
+	SDL_GL_DestroyContext(win_ctx);
 	win_ctx = NULL;
 }
 

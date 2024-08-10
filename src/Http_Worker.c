@@ -935,6 +935,11 @@ static cc_result HttpBackend_Do(struct HttpRequest* req, cc_string* urlStr) {
 			res = HttpBackend_PerformRequest(&state);
 			retried = true;
 		}
+		if (res == ReturnCode_SocketDropped && !retried) {
+			Platform_LogConst("Resetting connection due to being dropped..");
+			res = HttpBackend_PerformRequest(&state);
+			retried = true;
+		}
 
 		if (res || !HttpClient_IsRedirect(req)) break;
 		if (redirects >= 20) return HTTP_ERR_REDIRECTS;
@@ -1346,7 +1351,7 @@ static void WorkerLoop(void) {
 			DoRequest(&request);
 		} else {
 			/* Block until another thread submits a request to do */
-			Platform_LogConst("Going back to sleep...");
+			Platform_LogConst("Download queue empty, going back to sleep...");
 			Waitable_Wait(workerWaitable);
 		}
 	}

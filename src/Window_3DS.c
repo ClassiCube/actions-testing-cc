@@ -14,7 +14,6 @@
 #include <3ds.h>
 
 static cc_bool launcherMode;
-static Result irrst_result;
 static u16 top_width, top_height;
 static u16 btm_width, btm_height;
 
@@ -52,8 +51,6 @@ void Window_Init(void) {
 	Window_Main.SoftKeyboard = SOFT_KEYBOARD_RESIZE;
 	Input_SetTouchMode(true);
 	Gui_SetTouchUI(true);
-	Input.Sources = INPUT_SOURCE_GAMEPAD;
-	irrst_result  = irrstInit();
 	
 	Window_Alt.Width  = btm_width;
 	Window_Alt.Height = btm_height;
@@ -74,6 +71,8 @@ void Window_Create3D(int width, int height) {
 	Window_Alt.Width  = btm_width;
 	launcherMode      = false; 
 }
+
+void Window_Destroy(void) { }
 
 void Window_SetTitle(const cc_string* title) { }
 void Clipboard_GetText(cc_string* value) { }
@@ -129,39 +128,47 @@ void Window_UpdateRawMouse(void)  { }
 /*########################################################################################################################*
 *-------------------------------------------------------Gamepads----------------------------------------------------------*
 *#########################################################################################################################*/
-static void HandleButtons(u32 mods) {
-	Gamepad_SetButton(0, CCPAD_L, mods & KEY_L);
-	Gamepad_SetButton(0, CCPAD_R, mods & KEY_R);
+static Result irrst_result;
+
+void Gamepads_Init(void) {
+	Input.Sources = INPUT_SOURCE_GAMEPAD;
+	irrst_result  = irrstInit();
+}
+
+static void HandleButtons(int port, u32 mods) {
+	Gamepad_SetButton(port, CCPAD_L, mods & KEY_L);
+	Gamepad_SetButton(port, CCPAD_R, mods & KEY_R);
 	
-	Gamepad_SetButton(0, CCPAD_A, mods & KEY_A);
-	Gamepad_SetButton(0, CCPAD_B, mods & KEY_B);
-	Gamepad_SetButton(0, CCPAD_X, mods & KEY_X);
-	Gamepad_SetButton(0, CCPAD_Y, mods & KEY_Y);
+	Gamepad_SetButton(port, CCPAD_1, mods & KEY_A);
+	Gamepad_SetButton(port, CCPAD_2, mods & KEY_B);
+	Gamepad_SetButton(port, CCPAD_3, mods & KEY_X);
+	Gamepad_SetButton(port, CCPAD_4, mods & KEY_Y);
 	
-	Gamepad_SetButton(0, CCPAD_START,  mods & KEY_START);
-	Gamepad_SetButton(0, CCPAD_SELECT, mods & KEY_SELECT);
+	Gamepad_SetButton(port, CCPAD_START,  mods & KEY_START);
+	Gamepad_SetButton(port, CCPAD_SELECT, mods & KEY_SELECT);
 	
-	Gamepad_SetButton(0, CCPAD_LEFT,   mods & KEY_DLEFT);
-	Gamepad_SetButton(0, CCPAD_RIGHT,  mods & KEY_DRIGHT);
-	Gamepad_SetButton(0, CCPAD_UP,     mods & KEY_DUP);
-	Gamepad_SetButton(0, CCPAD_DOWN,   mods & KEY_DDOWN);
+	Gamepad_SetButton(port, CCPAD_LEFT,   mods & KEY_DLEFT);
+	Gamepad_SetButton(port, CCPAD_RIGHT,  mods & KEY_DRIGHT);
+	Gamepad_SetButton(port, CCPAD_UP,     mods & KEY_DUP);
+	Gamepad_SetButton(port, CCPAD_DOWN,   mods & KEY_DDOWN);
 	
-	Gamepad_SetButton(0, CCPAD_ZL, mods & KEY_ZL);
-	Gamepad_SetButton(0, CCPAD_ZR, mods & KEY_ZR);
+	Gamepad_SetButton(port, CCPAD_ZL, mods & KEY_ZL);
+	Gamepad_SetButton(port, CCPAD_ZR, mods & KEY_ZR);
 }
 
 #define AXIS_SCALE 8.0f
-static void ProcessCircleInput(int axis, circlePosition* pos, float delta) {
+static void ProcessCircleInput(int port, int axis, circlePosition* pos, float delta) {
 	// May not be exactly 0 on actual hardware
 	if (Math_AbsI(pos->dx) <= 24) pos->dx = 0;
 	if (Math_AbsI(pos->dy) <= 24) pos->dy = 0;
 		
-	Gamepad_SetAxis(0, axis, pos->dx / AXIS_SCALE, -pos->dy / AXIS_SCALE, delta);
+	Gamepad_SetAxis(port, axis, pos->dx / AXIS_SCALE, -pos->dy / AXIS_SCALE, delta);
 }
 
-void Window_ProcessGamepads(float delta) {
+void Gamepads_Process(float delta) {
 	u32 mods = hidKeysDown() | hidKeysHeld();
-	HandleButtons(mods);
+	int port = Gamepad_Connect(0x3D5, PadBind_Defaults);
+	HandleButtons(port, mods);
 	
 	circlePosition hid_pos;
 	hidCircleRead(&hid_pos);
@@ -171,10 +178,10 @@ void Window_ProcessGamepads(float delta) {
 		irrstScanInput();
 		irrstCstickRead(&stk_pos);
 		
-		ProcessCircleInput(PAD_AXIS_RIGHT, &stk_pos, delta);
-		ProcessCircleInput(PAD_AXIS_LEFT,  &hid_pos, delta);
+		ProcessCircleInput(port, PAD_AXIS_RIGHT, &stk_pos, delta);
+		ProcessCircleInput(port, PAD_AXIS_LEFT,  &hid_pos, delta);
 	} else {
-		ProcessCircleInput(PAD_AXIS_RIGHT, &hid_pos, delta);
+		ProcessCircleInput(port, PAD_AXIS_RIGHT, &hid_pos, delta);
 	}
 }
 
@@ -183,7 +190,7 @@ void Window_ProcessGamepads(float delta) {
 *------------------------------------------------------Framebuffer--------------------------------------------------------*
 *#########################################################################################################################*/
 void Window_AllocFramebuffer(struct Bitmap* bmp, int width, int height) {
-	bmp->scan0  = (BitmapCol*)Mem_Alloc(width * height, 4, "window pixels");
+	bmp->scan0  = (BitmapCol*)Mem_Alloc(width * height, BITMAPCOLOR_SIZE, "window pixels");
 	bmp->width  = width;
 	bmp->height = height;
 }
@@ -273,8 +280,6 @@ void OnscreenKeyboard_Open(struct OpenKeyboardArgs* args) {
 	OnscreenTextChanged(output);
 }
 void OnscreenKeyboard_SetText(const cc_string* text) { }
-void OnscreenKeyboard_Draw2D(Rect2D* r, struct Bitmap* bmp) { }
-void OnscreenKeyboard_Draw3D(void) { }
 
 void OnscreenKeyboard_Close(void) { 
 	DisplayInfo.ShowingSoftKeyboard = false;

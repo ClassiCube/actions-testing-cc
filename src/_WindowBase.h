@@ -11,7 +11,6 @@ struct cc_window WindowInfo;
 #define Display_CentreY(height) (DisplayInfo.y + (DisplayInfo.Height - height) / 2)
 
 static int cursorPrevX, cursorPrevY;
-static cc_bool cursorVisible = true;
 /* Gets the position of the cursor in screen or window coordinates */
 static void Cursor_GetRawPos(int* x, int* y);
 /* Sets whether the cursor is visible when over this window */
@@ -21,8 +20,8 @@ static void Cursor_DoSetVisible(cc_bool visible);
 
 /* Sets whether the cursor is visible when over this window */
 static void Cursor_SetVisible(cc_bool visible) {
-	if (cursorVisible == visible) return;
-	cursorVisible = visible;
+	if (DisplayInfo.CursorVisible == visible) return;
+	DisplayInfo.CursorVisible = visible;
 	Cursor_DoSetVisible(visible);
 }
 
@@ -100,7 +99,7 @@ static CC_INLINE void InitGraphicsMode(struct GraphicsMode* m) {
 }
 
 /* EGL is window system agnostic, other OpenGL context backends are tied to one windowing system */
-#if (CC_GFX_BACKEND & CC_GFX_BACKEND_GL_MASK) && defined CC_BUILD_EGL
+#if CC_GFX_BACKEND_IS_GL() && defined CC_BUILD_EGL
 /*########################################################################################################################*
 *-------------------------------------------------------EGL OpenGL--------------------------------------------------------*
 *#########################################################################################################################*/
