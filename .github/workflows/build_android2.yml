@@ -41,8 +41,8 @@ jobs:
           
           echo "Searching.."
           find $ROOT_DIR/android/app
-          find $PWD | grep apksigner
-          find /opt/android-sdk-linux/ | grep apksigner
+          find $PWD -name "*apksigner*"
+          find /opt/android-sdk-linux/ -name "*apksigner*"
           echo "Searched.."
 
           cd $ROOT_DIR/src
