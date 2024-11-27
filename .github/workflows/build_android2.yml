@@ -29,10 +29,6 @@ jobs:
           NDK_ROOT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
           TOOLS_ROOT="$ANDROID_SDK_ROOT/build-tools"
           SDK_ROOT="$ANDROID_SDK_ROOT/platforms/android-34"
-          
-          echo "Searching.."
-          find $ANDROID_NDK_ROOT -name "*-clang"
-          echo "Searched.."
 
           cd $ROOT_DIR/src
           $NDK_ROOT/armv7a-linux-androideabi21-clang *.c $DROID_FLAGS -march=armv5 $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_16
