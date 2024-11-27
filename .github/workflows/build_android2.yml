@@ -10,7 +10,7 @@ jobs:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-20.04
     container:
-      image: ghcr.io/saschpe/android-ndk:34-jdk17.0.8_7-ndk25.2.9519653-cmake3.22.1
+      image: ghcr.io/saschpe/android-ndk:35-jdk22.0.2_9-ndk27.0.12077973-cmake3.22.1
     steps:
       - uses: actions/checkout@v4
 
