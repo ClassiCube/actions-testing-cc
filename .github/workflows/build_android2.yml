@@ -27,7 +27,7 @@ jobs:
           
           ROOT_DIR=$PWD
           NDK_ROOT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          TOOLS_ROOT="$ANDROID_SDK_ROOT/build-tools"
+          TOOLS_ROOT="$ANDROID_SDK_ROOT/build-tools/31.0.0"
           SDK_ROOT="$ANDROID_SDK_ROOT/platforms/android-34"
           find $ANDROID_SDK_ROOT -name "*d8*"
 
@@ -68,7 +68,8 @@ jobs:
           $TOOLS_ROOT/aapt package -f -M AndroidManifest.xml -S res -F obj/cc-unsigned.apk -I $SDK_ROOT/android.jar
           # and add all the required files
           cp obj/classes.dex classes.dex
-          $TOOLS_ROOT/aapt add -f obj/cc-unsigned.apk classes.dex lib/armeabi/libclassicube.so lib/armeabi-v7a/libclassicube.so lib/arm64-v8a/libclassicube.so lib/x86/libclassicube.so lib/x86_64/libclassicube.so
+          #$TOOLS_ROOT/aapt add -f obj/cc-unsigned.apk classes.dex lib/armeabi/libclassicube.so lib/armeabi-v7a/libclassicube.so lib/arm64-v8a/libclassicube.so lib/x86/libclassicube.so lib/x86_64/libclassicube.so
+          $TOOLS_ROOT/aapt add -f obj/cc-unsigned.apk classes.dex lib/armeabi/libclassicube.so
           # sign the apk with debug key (https://stackoverflow.com/questions/16711233/)
           cp obj/cc-unsigned.apk obj/cc-signed.apk
           #jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore debug.keystore -storepass android -keypass android obj/cc-signed.apk androiddebugkey
