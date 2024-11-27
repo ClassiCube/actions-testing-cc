@@ -29,22 +29,23 @@ jobs:
           NDK_ROOT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
           TOOLS_ROOT="$ANDROID_SDK_ROOT/build-tools"
           SDK_ROOT="$ANDROID_SDK_ROOT/platforms/android-34"
+          find $ANDROID_SDK_ROOT -name "*d8*"
 
           cd $ROOT_DIR/src
           $NDK_ROOT/armv7a-linux-androideabi21-clang *.c $DROID_FLAGS -march=armv5 $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_16
-          $NDK_ROOT/armv7a-linux-androideabi21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_32
-          $NDK_ROOT/aarch64-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_64
-          $NDK_ROOT/i686-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-x86_32
-          $NDK_ROOT/x86_64-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-x86_64
+          #$NDK_ROOT/armv7a-linux-androideabi21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_32
+          #$NDK_ROOT/aarch64-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-arm_64
+          #$NDK_ROOT/i686-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-x86_32
+          #$NDK_ROOT/x86_64-linux-android21-clang *.c $DROID_FLAGS $DROID_LIBS $LATEST_FLAG -o cc-droid-x86_64
           
           cd $ROOT_DIR/android/app/src/main
           # copy required native libraries
           mkdir lib lib/armeabi lib/armeabi-v7a lib/arm64-v8a lib/x86 lib/x86_64
           cp $ROOT_DIR/src/cc-droid-arm_16 lib/armeabi/libclassicube.so
-          cp $ROOT_DIR/src/cc-droid-arm_32 lib/armeabi-v7a/libclassicube.so
-          cp $ROOT_DIR/src/cc-droid-arm_64 lib/arm64-v8a/libclassicube.so
-          cp $ROOT_DIR/src/cc-droid-x86_32 lib/x86/libclassicube.so
-          cp $ROOT_DIR/src/cc-droid-x86_64 lib/x86_64/libclassicube.so
+          #cp $ROOT_DIR/src/cc-droid-arm_32 lib/armeabi-v7a/libclassicube.so
+          #cp $ROOT_DIR/src/cc-droid-arm_64 lib/arm64-v8a/libclassicube.so
+          #cp $ROOT_DIR/src/cc-droid-x86_32 lib/x86/libclassicube.so
+          #cp $ROOT_DIR/src/cc-droid-x86_64 lib/x86_64/libclassicube.so
           
           # The following commands are for manually building an .apk, see
           #  https://spin.atomicobject.com/2011/08/22/building-android-application-bundles-apks-by-hand/
