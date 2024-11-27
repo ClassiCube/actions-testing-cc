@@ -63,7 +63,7 @@ jobs:
           echo -n "${{ secrets.ANDROID_SIGNING_KEY_BASE64 }}" | base64 --decode > debug.keystore
           
           # compile the multiple .class files into one .dex file
-          $TOOLS_ROOT/d8 --output=obj/classes.dex ./obj
+          $TOOLS_ROOT/d8 obj/*.class --output=obj/classes.dex
           # create initial .apk with packaged version of resources
           $TOOLS_ROOT/aapt package -f -M AndroidManifest.xml -S res -F obj/cc-unsigned.apk -I $SDK_ROOT/android.jar
           # and add all the required files
