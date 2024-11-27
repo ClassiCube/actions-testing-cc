@@ -8,9 +8,7 @@ concurrency:
 jobs:
   build:
     if: github.ref_name == github.event.repository.default_branch
-    runs-on: ubuntu-20.04
-    container:
-      image: ghcr.io/saschpe/android-ndk:35-jdk22.0.2_9-ndk27.0.12077973-cmake3.22.1
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -32,17 +30,8 @@ jobs:
           TOOLS_ROOT=$ROOT_DIR/build-tools
           SDK_ROOT="/opt/android-sdk-linux/platforms/android-34"
           
-          mkdir build-tools
-          wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/build-tools.zip
-          unzip build-tools.zip -d build-tools
-          chmod +x build-tools/aapt
-          chmod +x build-tools/dx
-          chmod +x build-tools/zipalign
-          
           echo "Searching.."
-          find $ROOT_DIR/android/app
-          find $PWD -name "*apksigner*"
-          find /opt/android-sdk-linux/ -name "*apksigner*"
+          ls $ANDROID_SDK_ROOT
           echo "Searched.."
 
           cd $ROOT_DIR/src
