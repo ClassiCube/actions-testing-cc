@@ -31,7 +31,7 @@ jobs:
           SDK_ROOT="$ANDROID_SDK_ROOT/platforms/android-34"
           
           echo "Searching.."
-          find $ANDROID_NDK_ROOT
+          find $ANDROID_NDK_ROOT -name "*-clang"
           echo "Searched.."
 
           cd $ROOT_DIR/src
