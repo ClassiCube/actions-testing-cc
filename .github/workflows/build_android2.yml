@@ -26,12 +26,12 @@ jobs:
           DROID_LIBS="-lGLESv2 -lEGL -lm -landroid -llog"
           
           ROOT_DIR=$PWD
-          NDK_ROOT="/opt/android-sdk-linux/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          TOOLS_ROOT=$ANDROID_SDK_ROOT/build-tools
-          SDK_ROOT="/opt/android-sdk-linux/platforms/android-34"
+          NDK_ROOT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          TOOLS_ROOT="$ANDROID_SDK_ROOT/build-tools"
+          SDK_ROOT="$ANDROID_SDK_ROOT/platforms/android-34"
           
           echo "Searching.."
-          find $ANDROID_SDK_ROOT
+          find $ANDROID_NDK_ROOT
           echo "Searched.."
 
           cd $ROOT_DIR/src
