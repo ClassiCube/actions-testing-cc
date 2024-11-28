@@ -61,7 +61,7 @@ TimeMS DateTime_CurrentUTC(void) {
 	return (cc_uint64)cur.tv_sec + UNIX_EPOCH_SECONDS;
 }
 
-void DateTime_CurrentLocal(struct DateTime* t) {
+void DateTime_CurrentLocal(struct cc_datetime* t) {
 	struct timeval cur; 
 	struct tm loc_time;
 	gettimeofday(&cur, NULL);
@@ -86,6 +86,16 @@ cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
 	
 	// See CPU_TICKS_PER_USEC in libctru/include/3ds/os.h
 	return (end - beg) * US_PER_SEC / SYSCLOCK_ARM11;
+}
+
+
+/*########################################################################################################################*
+*-------------------------------------------------------Crash handling----------------------------------------------------*
+*#########################################################################################################################*/
+void CrashHandler_Install(void) { }
+
+void Process_Abort2(cc_result result, const char* raw_msg) {
+	Logger_DoAbort(result, raw_msg, NULL);
 }
 
 

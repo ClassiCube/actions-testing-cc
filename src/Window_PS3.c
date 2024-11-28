@@ -18,8 +18,6 @@
 #include <sysutil/video.h>
 
 static cc_bool launcherMode;
-static padInfo  pad_info;
-static padData  pad_data;
 static KbInfo   kb_info;
 static KbData   kb_data;
 static KbConfig kb_config;
@@ -274,6 +272,9 @@ void Window_DisableRawMouse(void) { Input.RawMode = false; }
 /*########################################################################################################################*
 *-------------------------------------------------------Gamepads----------------------------------------------------------*
 *#########################################################################################################################*/
+static padInfo pad_info;
+static padData pad_data[MAX_PORT_NUM];
+
 void Gamepads_Init(void) {
 	Input.Sources |= INPUT_SOURCE_GAMEPAD;
 	ioPadInit(MAX_PORT_NUM);
@@ -326,10 +327,10 @@ void Gamepads_Process(float delta) {
 	for (int i = 0; i < MAX_PORT_NUM; i++)
 	{
 		if (!pad_info.status[i]) continue;
-		ioPadGetData(i, &pad_data);
+		ioPadGetData(i, &pad_data[i]);
 
 		int port = Gamepad_Connect(0x503 + i, PadBind_Defaults);
-		ProcessPadInput(port, delta, &pad_data);
+		ProcessPadInput(port, delta, &pad_data[i]);
 	}
 }
 
@@ -339,6 +340,7 @@ void Gamepads_Process(float delta) {
 *#########################################################################################################################*/
 static u32 fb_offset;
 
+extern void Gfx_WaitFlip(void);
 extern u32* Gfx_AllocImage(u32* offset, s32 w, s32 h);
 extern void Gfx_TransferImage(u32 offset, s32 w, s32 h);
 
@@ -353,8 +355,7 @@ void Window_AllocFramebuffer(struct Bitmap* bmp, int width, int height) {
 
 void Window_DrawFramebuffer(Rect2D r, struct Bitmap* bmp) {
 	// TODO test
-	Gfx_BeginFrame();
-	Gfx_ClearBuffers(GFX_BUFFER_COLOR | GFX_BUFFER_DEPTH);
+	Gfx_WaitFlip();
 	// TODO: Only transfer dirty region instead of the entire bitmap
 	Gfx_TransferImage(fb_offset, bmp->width, bmp->height);
 	Gfx_EndFrame();

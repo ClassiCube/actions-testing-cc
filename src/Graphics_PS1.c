@@ -28,20 +28,22 @@ typedef struct {
 	DISPENV disp_env;
 	DRAWENV draw_env;
 
-	cc_uint32 ot[OT_LENGTH];
-	cc_uint8  buffer[BUFFER_LENGTH];
+	uint32_t ot[OT_LENGTH];
+	uint8_t  buffer[BUFFER_LENGTH];
 } RenderBuffer;
 
 static RenderBuffer buffers[2];
-static cc_uint8*    next_packet;
+static uint8_t*     next_packet;
+static uint8_t*     next_packet_end;
 static int          active_buffer;
 static RenderBuffer* buffer;
 static void* lastPoly;
-static cc_bool cullingEnabled;
+static cc_bool cullingEnabled, noMemWarned;
 
 static void OnBufferUpdated(void) {
-	buffer      = &buffers[active_buffer];
-	next_packet = buffer->buffer;
+	buffer          = &buffers[active_buffer];
+	next_packet     = buffer->buffer;
+    next_packet_end = next_packet + BUFFER_LENGTH;
 	ClearOTagR(buffer->ot, OT_LENGTH);
 }
 
@@ -60,14 +62,22 @@ static void SetupContexts(int w, int h, int r, int g, int b) {
 	OnBufferUpdated();
 }
 
-static void* new_primitive(int size) {
-	RenderBuffer* buffer = &buffers[active_buffer];
-	uint8_t* prim        = next_packet;
+// NOINLINE to avoid polluting the hot path
+static CC_NOINLINE new_primitive_nomem(void) {
+	if (noMemWarned) return NULL;
+	noMemWarned = true;
+	
+	Platform_LogConst("OUT OF VERTEX RAM");
+	return NULL;
+}
 
+static void* new_primitive(int size) {
+	uint8_t* prim  = next_packet;
 	next_packet += size;
 
-	assert(next_packet <= &buffer->buffer[BUFFER_LENGTH]);
-	return (void*)prim;
+	if (next_packet <= next_packet_end);
+		return (void*)prim;
+	return new_primitive_nomem();
 }
 
 static GfxResourceID white_square;
@@ -98,8 +108,7 @@ void Gfx_Create(void) {
 
 	InitGeom();
 	gte_SetGeomOffset(Window_Main.Width / 2, Window_Main.Height / 2);
-	// Set screen depth (basically FOV control, W/2 works best)
-	gte_SetGeomScreen(Window_Main.Width / 2);
+	gte_SetGeomScreen(Window_Main.Height / 2);
 }
 
 void Gfx_Free(void) { 
@@ -263,7 +272,7 @@ static void* AllocTextureAt(int i, struct Bitmap* bmp, int rowWidth) {
 	return tex;
 }
 
-static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
+GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
 	for (int i = 0; i < TEXTURES_MAX_COUNT; i++)
 	{
 		if (textures[i].width) continue;
@@ -363,8 +372,8 @@ void Gfx_DeleteIb(GfxResourceID* ib) { }
 *-------------------------------------------------------Vertex buffers----------------------------------------------------*
 *#########################################################################################################################*/
 // Preprocess vertex buffers into optimised layout for PS1
-struct PS1VertexColoured { int x, y, z; PackedCol Col; };
-struct PS1VertexTextured { int x, y, z; PackedCol Col; int u, v; };
+struct PS1VertexColoured { int x, y, z; unsigned rgbc; };
+struct PS1VertexTextured { int x, y, z; unsigned rgbc; int u, v; };
 static VertexFormat buf_fmt;
 static int buf_count;
 
@@ -374,9 +383,41 @@ static void* gfx_vertices;
 #define XYZFixed(value) ((int)((value) * (1 << 6)))
 #define UVFixed(value)  ((int)((value) * 1024.0f) & 0x3FF) // U/V wrapping not supported
 
+
+#define POLY_CODE_F4  0x28
+#define POLY_LEN_F4      5
+struct CC_POLY_F4 {
+	uint32_t tag;
+	uint32_t rgbc; // r0, g0, b0, code;
+	int16_t	 x0, y0;
+	int16_t	 x1, y1;
+	int16_t	 x2, y2;
+	int16_t	 x3, y3;
+};
+
+#define POLY_CODE_FT4 0x2C
+#define POLY_LEN_FT4     9
+struct CC_POLY_FT4 {
+	uint32_t tag;
+	uint32_t rgbc; // r0, g0, b0, code;
+	uint16_t x0, y0;
+	uint8_t	 u0, v0;
+	uint16_t clut;
+	int16_t  x1, y1;
+	uint8_t	 u1, v1;
+	uint16_t tpage;
+	int16_t	 x2, y2;
+	uint8_t	 u2, v2;
+	uint16_t pad0;
+	int16_t	 x3, y3;
+	uint8_t	 u3, v3;
+	uint16_t pad1;
+};
+
 static void PreprocessTexturedVertices(void) {
 	struct PS1VertexTextured* dst = gfx_vertices;
 	struct VertexTextured* src    = gfx_vertices;
+	float u, v;
 
 	// PS1 need to use raw U/V coordinates
 	//   i.e. U = (src->U * tex->width) % tex->width
@@ -392,8 +433,19 @@ static void PreprocessTexturedVertices(void) {
 		dst->x = XYZFixed(src->x);
 		dst->y = XYZFixed(src->y);
 		dst->z = XYZFixed(src->z);
-		dst->u = UVFixed(src->U * 0.99f);
-		dst->v = UVFixed(src->V        );
+
+		u = src->U * 0.99f;
+		v = src->V == 1.0f ? 0.99f : src->V;
+
+		dst->u = UVFixed(u);
+		dst->v = UVFixed(v);
+
+		// https://problemkaputt.de/psxspx-gpu-rendering-attributes.htm
+		// "For untextured graphics, 8bit RGB values of FFh are brightest. However, for texture blending, 8bit values of 80h are brightest"
+		int R = PackedCol_R(src->Col) >> 1;
+		int G = PackedCol_G(src->Col) >> 1;
+		int B = PackedCol_B(src->Col) >> 1;
+		dst->rgbc = R | (G << 8) | (B << 16) | (POLY_CODE_FT4 << 24);
 	}
 }
 
@@ -406,6 +458,11 @@ static void PreprocessColouredVertices(void) {
 		dst->x = XYZFixed(src->x);
 		dst->y = XYZFixed(src->y);
 		dst->z = XYZFixed(src->z);
+
+		int R = PackedCol_R(src->Col);
+		int G = PackedCol_G(src->Col);
+		int B = PackedCol_B(src->Col);
+		dst->rgbc = R | (G << 8) | (B << 16) | (POLY_CODE_F4 << 24);
 	}
 }
 
@@ -465,13 +522,7 @@ static struct MatrixRow mvp_row1, mvp_row2, mvp_row3, mvp_trans;
 #define ToFixed(v) (int)(v * (1 << 12))
 
 static void LoadTransformMatrix(struct Matrix* src) {
-	// https://math.stackexchange.com/questions/237369/given-this-transformation-matrix-how-do-i-decompose-it-into-translation-rotati
-	MATRIX mtx;
-
-	mtx.t[0] = ToFixed(src->row4.x);
-	mtx.t[1] = ToFixed(src->row4.y);
-	mtx.t[2] = ToFixed(src->row4.z);
-	
+	// https://math.stackexchange.com/questions/237369/given-this-transformation-matrix-how-do-i-decompose-it-into-translation-rotati	
 	mvp_trans.x = XYZFixed(1) * ToFixed(src->row4.x);
 	mvp_trans.y = XYZFixed(1) * ToFixed(src->row4.y);
 	mvp_trans.z = XYZFixed(1) * ToFixed(src->row4.z);
@@ -492,23 +543,30 @@ static void LoadTransformMatrix(struct Matrix* src) {
 	mvp_row3.z = ToFixed(src->row3.z);
 	mvp_row3.w = ToFixed(src->row3.w);
 
-	//Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row1.x, &src->row1.y, &src->row1.z);
-	//Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row2.x, &src->row2.y, &src->row2.z);
-	//Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row3.x, &src->row3.y, &src->row3.z);
-	//Platform_Log3("X: %f3, Y: %f3, Z: %f3", &src->row4.x, &src->row4.y, &src->row4.z);
+	//Platform_Log4("X:  %f3, %f3, %f3, %f3", &src->row1.x, &src->row2.x, &src->row3.x, &src->row4.x);
+	//Platform_Log4("Y:  %f3, %f3, %f3, %f3", &src->row1.y, &src->row2.y, &src->row3.y, &src->row4.y);
+	//Platform_Log4("Z:  %f3, %f3, %f3, %f3", &src->row1.z, &src->row2.z, &src->row3.z, &src->row4.z);
+	//Platform_Log4("W:  %f3, %f3, %f3, %f3", &src->row1.w, &src->row2.w, &src->row3.w, &src->row4.w);
 	//Platform_LogConst("====");
+
+	// Use w instead of z
+	// (row123.z = row123.w, only difference is row4.z/w being different)
+	MATRIX mtx;
+	mtx.t[0] = (int)(src->row4.x);
+	mtx.t[1] = (int)(src->row4.y);
+	mtx.t[2] = (int)(src->row4.w);
 
 	mtx.m[0][0] = ToFixed(src->row1.x);
 	mtx.m[0][1] = ToFixed(src->row1.y);
-	mtx.m[0][2] = ToFixed(src->row1.z);
+	mtx.m[0][2] = ToFixed(src->row1.w);
 
 	mtx.m[1][0] = ToFixed(src->row2.x);
 	mtx.m[1][1] = ToFixed(src->row2.y);
-	mtx.m[1][2] = ToFixed(src->row2.z);
+	mtx.m[1][2] = ToFixed(src->row2.w);
 
 	mtx.m[2][0] = ToFixed(src->row3.x);
 	mtx.m[2][1] = ToFixed(src->row3.y);
-	mtx.m[2][2] = ToFixed(src->row3.z);
+	mtx.m[2][2] = ToFixed(src->row3.w);
 	
 	gte_SetRotMatrix(&mtx);
 	gte_SetTransMatrix(&mtx);
@@ -597,6 +655,19 @@ static int Transform(IVec3* result, struct PS1VertexTextured* a) {
 	result->x = (x *  160      / w) + 160; 
 	result->y = (y * -120      / w) + 120;
 	result->z = (z * OT_LENGTH / w);
+
+	/*SVECTOR coord;
+	POLY_FT4 poly;
+	coord.vx = a->x; coord.vy = a->y; coord.vz = a->z;
+	gte_ldv0(&coord);
+	gte_rtps();
+	gte_stsxy(&poly.x0);
+
+	int X = (short)poly.x0, Y = (short)poly.y0;
+	Platform_Log3("X: %i, %i,  %i", &x, &result->x, &X);
+	Platform_Log3("Y: %i, %i,  %i", &y, &result->y, &Y);
+	Platform_LogConst("=======");*/
+
 	return z > w;
 }
 
@@ -606,17 +677,16 @@ static void DrawColouredQuads2D(int verticesCount, int startVertex) {
 	{
 		struct PS1VertexColoured* v = (struct PS1VertexColoured*)gfx_vertices + startVertex + i;
 		
-		POLY_F4* poly = new_primitive(sizeof(POLY_F4));
-		setPolyF4(poly);
+		struct CC_POLY_FT4* poly = new_primitive(sizeof(struct CC_POLY_FT4));
+        if (!poly) return;
+
+		setlen(poly, POLY_LEN_F4);
+		poly->rgbc = v->rgbc;
 
 		poly->x0 = XYZInteger(v[1].x); poly->y0 = XYZInteger(v[1].y);
 		poly->x1 = XYZInteger(v[0].x); poly->y1 = XYZInteger(v[0].y);
 		poly->x2 = XYZInteger(v[2].x); poly->y2 = XYZInteger(v[2].y);
 		poly->x3 = XYZInteger(v[3].x); poly->y3 = XYZInteger(v[3].y);
-
-		poly->r0 = PackedCol_R(v->Col);
-		poly->g0 = PackedCol_G(v->Col);
-		poly->b0 = PackedCol_B(v->Col);
 
 		if (lastPoly) { 
 			setaddr(poly, getaddr(lastPoly)); setaddr(lastPoly, poly); 
@@ -636,8 +706,11 @@ static void DrawTexturedQuads2D(int verticesCount, int startVertex) {
 	{
 		struct PS1VertexTextured* v = (struct PS1VertexTextured*)gfx_vertices + startVertex + i;
 		
-		POLY_FT4* poly = new_primitive(sizeof(POLY_FT4));
-		setPolyFT4(poly);
+		struct CC_POLY_FT4* poly = new_primitive(sizeof(struct CC_POLY_FT4));
+        if (!poly) return;
+
+		setlen(poly, POLY_LEN_FT4);
+		poly->rgbc  = v->rgbc;
 		poly->tpage = curTex->tpage;
 		poly->clut  = 0;
 
@@ -655,12 +728,6 @@ static void DrawTexturedQuads2D(int verticesCount, int startVertex) {
 		poly->u3 = (v[3].u >> uShift) + uOffset;
 		poly->v3 = (v[3].v >> vShift) + vOffset;
 
-		// https://problemkaputt.de/psxspx-gpu-rendering-attributes.htm
-		// "For untextured graphics, 8bit RGB values of FFh are brightest. However, for texture blending, 8bit values of 80h are brightest"
-		poly->r0 = PackedCol_R(v->Col) >> 1;
-		poly->g0 = PackedCol_G(v->Col) >> 1;
-		poly->b0 = PackedCol_B(v->Col) >> 1;
-
 		if (lastPoly) { 
 			setaddr(poly, getaddr(lastPoly)); setaddr(lastPoly, poly); 
 		} else {
@@ -673,10 +740,7 @@ static void DrawTexturedQuads2D(int verticesCount, int startVertex) {
 static void DrawColouredQuads3D(int verticesCount, int startVertex) {
 	for (int i = 0; i < verticesCount; i += 4) 
 	{
-		struct VertexColoured* v = (struct VertexColoured*)gfx_vertices + startVertex + i;
-		
-		POLY_F4* poly = new_primitive(sizeof(POLY_F4));
-		setPolyF4(poly);
+		struct PS1VertexColoured* v = (struct PS1VertexColoured*)gfx_vertices + startVertex + i;
 
 		IVec3 coords[4];
 		int clipped = 0;
@@ -685,6 +749,12 @@ static void DrawColouredQuads3D(int verticesCount, int startVertex) {
 		clipped |= Transform(&coords[2], &v[2]);
 		clipped |= Transform(&coords[3], &v[3]);
 		if (clipped) continue;
+		
+		struct CC_POLY_F4* poly = new_primitive(sizeof(struct CC_POLY_F4));
+        if (!poly) return;
+
+		setlen(poly, POLY_LEN_F4);
+		poly->rgbc = v->rgbc;
 
 		poly->x0 = coords[1].x; poly->y0 = coords[1].y;
 		poly->x1 = coords[0].x; poly->y1 = coords[0].y;
@@ -693,67 +763,97 @@ static void DrawColouredQuads3D(int verticesCount, int startVertex) {
 
 		int p = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4;
 		if (p < 0 || p >= OT_LENGTH) continue;
-
-		poly->r0 = PackedCol_R(v->Col);
-		poly->g0 = PackedCol_G(v->Col);
-		poly->b0 = PackedCol_B(v->Col);
 
 		addPrim(&buffer->ot[p >> 2], poly);
 	}
 }
 
-static void DrawTexturedQuads3D(int verticesCount, int startVertex) {
-	int uOffset = curTex->xOffset, vOffset = curTex->yOffset;
+static void DrawTexturedQuad(struct PS1VertexTextured* v0, struct PS1VertexTextured* v1,
+							struct PS1VertexTextured* v2, struct PS1VertexTextured* v3, int level);
+
+#define CalcMidpoint(mid, p1, p2) \
+	mid.x = (p1->x + p2->x) >> 1; \
+	mid.y = (p1->y + p2->y) >> 1; \
+	mid.z = (p1->z + p2->z) >> 1; \
+	mid.u = (p1->u + p2->u) >> 1; \
+	mid.v = (p1->v + p2->v) >> 1; \
+	mid.rgbc = p1->rgbc;
+ 
+static CC_NOINLINE void SubdivideQuad(struct PS1VertexTextured* v0, struct PS1VertexTextured* v1,
+						struct PS1VertexTextured* v2, struct PS1VertexTextured* v3, int level) {
+	if (level > 2) return;
+	struct PS1VertexTextured m01, m02, m03, m12, m32;
+
+	// v0 --- m01 --- v1
+	//  |  \   | \    |
+	//  |    \ |   \  |
+	//m03 ----m02----m12
+	//  |  \   | \    |
+	//  |    \ |   \  |
+	// v3 ----m32---- v2
+
+	CalcMidpoint(m01, v0, v1);
+	CalcMidpoint(m02, v0, v2);
+	CalcMidpoint(m03, v0, v3);
+	CalcMidpoint(m12, v1, v2);
+	CalcMidpoint(m32, v3, v2);
+
+	DrawTexturedQuad(  v0, &m01, &m02, &m03, level);
+	DrawTexturedQuad(&m01,   v1, &m12, &m02, level);
+	DrawTexturedQuad(&m02, &m12,   v2, &m32, level);
+	DrawTexturedQuad(&m03, &m02, &m32,   v3, level);
+}
+
+static CC_INLINE void DrawTexturedQuad(struct PS1VertexTextured* v0, struct PS1VertexTextured* v1,
+							struct PS1VertexTextured* v2, struct PS1VertexTextured* v3, int level) {
+	IVec3 coords[4];
+	int clipped = 0;
+	clipped |= Transform(&coords[0], v0);
+	clipped |= Transform(&coords[1], v1);
+	clipped |= Transform(&coords[2], v2);
+	clipped |= Transform(&coords[3], v3);
+	if (clipped) return;//{ SubdivideQuad(v0, v1, v2, v3, level + 1); return; }
+		
+	int p = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4;
+	if (p < 0 || p >= OT_LENGTH) return;
+		
+	struct CC_POLY_FT4* poly = new_primitive(sizeof(struct CC_POLY_FT4));
+    if (!poly) return;
+
+	setlen(poly, POLY_LEN_FT4);
+	poly->rgbc  = v0->rgbc;
+	poly->tpage = curTex->tpage;
+	poly->clut  = 0;
+
+	// TODO & instead of % 
+	poly->x0 = coords[1].x; poly->y0 = coords[1].y;
+	poly->x1 = coords[0].x; poly->y1 = coords[0].y;
+	poly->x2 = coords[2].x; poly->y2 = coords[2].y;
+	poly->x3 = coords[3].x; poly->y3 = coords[3].y;
+
+	int uOffset = curTex->xOffset;
+	int vOffset = curTex->yOffset;
 	int uShift  = 10 - curTex->width_shift;
 	int vShift  = 10 - curTex->height_shift;
+		
+	poly->u0 = (v1->u >> uShift) + uOffset;
+	poly->v0 = (v1->v >> vShift) + vOffset;
+	poly->u1 = (v0->u >> uShift) + uOffset;
+	poly->v1 = (v0->v >> vShift) + vOffset;
+	poly->u2 = (v2->u >> uShift) + uOffset;
+	poly->v2 = (v2->v >> vShift) + vOffset;
+	poly->u3 = (v3->u >> uShift) + uOffset;
+	poly->v3 = (v3->v >> vShift) + vOffset;
 
+	addPrim(&buffer->ot[p >> 2], poly);
+}
+
+static void DrawTexturedQuads3D(int verticesCount, int startVertex) {
 	for (int i = 0; i < verticesCount; i += 4) 
 	{
 		struct PS1VertexTextured* v = (struct PS1VertexTextured*)gfx_vertices + startVertex + i;
-		
-		POLY_FT4* poly = new_primitive(sizeof(POLY_FT4));
-		setPolyFT4(poly);
-		poly->tpage = curTex->tpage;
-		poly->clut  = 0;
 
-		IVec3 coords[4];
-		int clipped = 0;
-		clipped |= Transform(&coords[0], &v[0]);
-		clipped |= Transform(&coords[1], &v[1]);
-		clipped |= Transform(&coords[2], &v[2]);
-		clipped |= Transform(&coords[3], &v[3]);
-		if (clipped) continue;
-
-		// TODO & instead of % 
-		poly->x0 = coords[1].x; poly->y0 = coords[1].y;
-		poly->x1 = coords[0].x; poly->y1 = coords[0].y;
-		poly->x2 = coords[2].x; poly->y2 = coords[2].y;
-		poly->x3 = coords[3].x; poly->y3 = coords[3].y;
-		
-		if (cullingEnabled) {
-			// https://gamedev.stackexchange.com/questions/203694/how-to-make-backface-culling-work-correctly-in-both-orthographic-and-perspective
-			int signA = (coords[1].x - coords[0].x) * (coords[2].y - coords[0].y);
-			int signB = (coords[2].x - coords[0].x) * (coords[1].y - coords[0].y);
-			if (signA > signB) continue;
-		}
-		
-		poly->u0 = (v[1].u >> uShift) + uOffset;
-		poly->v0 = (v[1].v >> vShift) + vOffset;
-		poly->u1 = (v[0].u >> uShift) + uOffset;
-		poly->v1 = (v[0].v >> vShift) + vOffset;
-		poly->u2 = (v[2].u >> uShift) + uOffset;
-		poly->v2 = (v[2].v >> vShift) + vOffset;
-		poly->u3 = (v[3].u >> uShift) + uOffset;
-		poly->v3 = (v[3].v >> vShift) + vOffset;
-		
-		int p = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4;
-		if (p < 0 || p >= OT_LENGTH) continue;
-
-		poly->r0 = PackedCol_R(v->Col) >> 1;
-		poly->g0 = PackedCol_G(v->Col) >> 1;
-		poly->b0 = PackedCol_B(v->Col) >> 1;
-
-		addPrim(&buffer->ot[p >> 2], poly);
+		DrawTexturedQuad(&v[0], &v[1], &v[2], &v[3], 0);
 	}
 }
 
@@ -763,6 +863,7 @@ static void DrawTexturedQuads3D(int verticesCount, int startVertex) {
 		struct VertexTextured* v = (struct VertexTextured*)gfx_vertices + startVertex + i;
 		
 		POLY_F4* poly = new_primitive(sizeof(POLY_F4));
+        if (!poly) return;
 		setPolyF4(poly);
 
 		SVECTOR coords[4];
@@ -809,6 +910,7 @@ static void DrawTexturedQuads3D(int verticesCount, int startVertex) {
 		struct VertexTextured* v = (struct VertexTextured*)gfx_vertices + startVertex + i;
 		
 		POLY_F4* poly = new_primitive(sizeof(POLY_F4));
+        if (!poly) return;
 		setPolyF4(poly);
 
 		poly->x0 = v[1].x; poly->y0 = v[1].y;
@@ -862,7 +964,8 @@ cc_bool Gfx_WarnIfNecessary(void) { return false; }
 cc_bool Gfx_GetUIOptions(struct MenuOptionsScreen* s) { return false; }
 
 void Gfx_BeginFrame(void) {
-	lastPoly = NULL;
+	lastPoly    = NULL;
+	noMemWarned = false;
 }
 
 void Gfx_EndFrame(void) {

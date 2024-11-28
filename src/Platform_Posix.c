@@ -121,7 +121,7 @@ TimeMS DateTime_CurrentUTC(void) {
 	return (cc_uint64)cur.tv_sec + UNIX_EPOCH_SECONDS;
 }
 
-void DateTime_CurrentLocal(struct DateTime* t) {
+void DateTime_CurrentLocal(struct cc_datetime* t) {
 	struct timeval cur;
 	struct tm loc_time;
 	gettimeofday(&cur, NULL);
@@ -175,7 +175,7 @@ cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
 /* "... These functions are part of the Timers option and need not be available on all implementations..." */
 cc_uint64 Stopwatch_Measure(void) {
 	struct timespec t;
-	#ifdef CC_BUILD_IRIX
+	#if defined CC_BUILD_IRIX || defined CC_BUILD_HPUX
 	clock_gettime(CLOCK_REALTIME, &t);
 	#else
 	/* TODO: CLOCK_MONOTONIC_RAW ?? */
@@ -189,6 +189,74 @@ cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
 	return (end - beg) / 1000;
 }
 #endif
+
+
+/*########################################################################################################################*
+*-------------------------------------------------------Crash handling----------------------------------------------------*
+*#########################################################################################################################*/
+static const char* SignalDescribe(int type) {
+	switch (type) {
+	case SIGSEGV: return "SIGSEGV";
+	case SIGBUS:  return "SIGBUS";
+	case SIGILL:  return "SIGILL";
+	case SIGABRT: return "SIGABRT";
+	case SIGFPE:  return "SIGFPE";
+	}
+	return NULL;
+}
+
+static void SignalHandler(int sig, siginfo_t* info, void* ctx) {
+	cc_string msg; char msgBuffer[128 + 1];
+	struct sigaction sa = { 0 };
+	const char* desc;
+	int type, code;
+	cc_uintptr addr;
+
+	/* Uninstall handler to avoid chance of infinite loop */
+	sa.sa_handler = SIG_DFL;
+	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGBUS,  &sa, NULL);
+	sigaction(SIGILL,  &sa, NULL);
+	sigaction(SIGABRT, &sa, NULL);
+	sigaction(SIGFPE,  &sa, NULL);
+
+	type = info->si_signo;
+	code = info->si_code;
+	addr = (cc_uintptr)info->si_addr;
+	desc = SignalDescribe(type);
+
+	String_InitArray_NT(msg, msgBuffer);
+	if (desc) {
+		String_Format3(&msg, "Unhandled signal %c (code %i) at %x", desc,  &code, &addr);
+	} else {
+		String_Format3(&msg, "Unhandled signal %i (code %i) at %x", &type, &code, &addr);
+	}
+	msg.buffer[msg.length] = '\0';
+
+	#if defined CC_BUILD_ANDROID
+	/* deliberate Dalvik VM abort, try to log a nicer error for this */
+	if (type == SIGSEGV && addr == 0xDEADD00D) Platform_TryLogJavaError();
+	#endif
+	Logger_DoAbort(0, msg.buffer, ctx);
+}
+
+void CrashHandler_Install(void) {
+	struct sigaction sa = { 0 };
+	/* sigemptyset(&sa.sa_mask); */
+	/* NOTE: Calling sigemptyset breaks when using recent Android NDK and trying to run on old devices */
+	sa.sa_sigaction = SignalHandler;
+	sa.sa_flags     = SA_RESTART | SA_SIGINFO;
+
+	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGBUS,  &sa, NULL);
+	sigaction(SIGILL,  &sa, NULL);
+	sigaction(SIGABRT, &sa, NULL);
+	sigaction(SIGFPE,  &sa, NULL);
+}
+
+void Process_Abort2(cc_result result, const char* raw_msg) {
+	Logger_DoAbort(result, raw_msg, NULL);
+}
 
 
 /*########################################################################################################################*
@@ -247,7 +315,7 @@ cc_result Directory_Enum(const cc_string* dirPath, void* obj, Directory_EnumCall
 		len = String_Length(src);
 		String_AppendUtf8(&path, src, len);
 
-#if defined CC_BUILD_HAIKU || defined CC_BUILD_SOLARIS || defined CC_BUILD_IRIX || defined CC_BUILD_BEOS
+#if defined CC_BUILD_HAIKU || defined CC_BUILD_SOLARIS || defined CC_BUILD_HPUX || defined CC_BUILD_IRIX || defined CC_BUILD_BEOS
 		{
 			char full_path[NATIVE_STR_LEN];
 			struct stat sb;
@@ -351,15 +419,15 @@ static void* ExecThread(void* param) {
 
 void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char* name) {
 	pthread_t* ptr = (pthread_t*)Mem_Alloc(1, sizeof(pthread_t), "thread");
-	int res;
-	*handle = ptr;
-
 	pthread_attr_t attrs;
+	int res;
+	
+	*handle = ptr;
 	pthread_attr_init(&attrs);
 	pthread_attr_setstacksize(&attrs, stackSize);
 	
 	res = pthread_create(ptr, &attrs, ExecThread, (void*)func);
-	if (res) Logger_Abort2(res, "Creating thread");
+	if (res) Process_Abort2(res, "Creating thread");
 	pthread_attr_destroy(&attrs);
 	
 #if defined CC_BUILD_LINUX || defined CC_BUILD_HAIKU
@@ -376,38 +444,38 @@ void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char*
 void Thread_Detach(void* handle) {
 	pthread_t* ptr = (pthread_t*)handle;
 	int res = pthread_detach(*ptr);
-	if (res) Logger_Abort2(res, "Detaching thread");
+	if (res) Process_Abort2(res, "Detaching thread");
 	Mem_Free(ptr);
 }
 
 void Thread_Join(void* handle) {
 	pthread_t* ptr = (pthread_t*)handle;
 	int res = pthread_join(*ptr, NULL);
-	if (res) Logger_Abort2(res, "Joining thread");
+	if (res) Process_Abort2(res, "Joining thread");
 	Mem_Free(ptr);
 }
 
 void* Mutex_Create(const char* name) {
 	pthread_mutex_t* ptr = (pthread_mutex_t*)Mem_Alloc(1, sizeof(pthread_mutex_t), "mutex");
 	int res = pthread_mutex_init(ptr, NULL);
-	if (res) Logger_Abort2(res, "Creating mutex");
+	if (res) Process_Abort2(res, "Creating mutex");
 	return ptr;
 }
 
 void Mutex_Free(void* handle) {
 	int res = pthread_mutex_destroy((pthread_mutex_t*)handle);
-	if (res) Logger_Abort2(res, "Destroying mutex");
+	if (res) Process_Abort2(res, "Destroying mutex");
 	Mem_Free(handle);
 }
 
 void Mutex_Lock(void* handle) {
 	int res = pthread_mutex_lock((pthread_mutex_t*)handle);
-	if (res) Logger_Abort2(res, "Locking mutex");
+	if (res) Process_Abort2(res, "Locking mutex");
 }
 
 void Mutex_Unlock(void* handle) {
 	int res = pthread_mutex_unlock((pthread_mutex_t*)handle);
-	if (res) Logger_Abort2(res, "Unlocking mutex");
+	if (res) Process_Abort2(res, "Unlocking mutex");
 }
 
 struct WaitData {
@@ -421,9 +489,9 @@ void* Waitable_Create(const char* name) {
 	int res;
 	
 	res = pthread_cond_init(&ptr->cond, NULL);
-	if (res) Logger_Abort2(res, "Creating waitable");
+	if (res) Process_Abort2(res, "Creating waitable");
 	res = pthread_mutex_init(&ptr->mutex, NULL);
-	if (res) Logger_Abort2(res, "Creating waitable mutex");
+	if (res) Process_Abort2(res, "Creating waitable mutex");
 
 	ptr->signalled = false;
 	return ptr;
@@ -434,9 +502,9 @@ void Waitable_Free(void* handle) {
 	int res;
 	
 	res = pthread_cond_destroy(&ptr->cond);
-	if (res) Logger_Abort2(res, "Destroying waitable");
+	if (res) Process_Abort2(res, "Destroying waitable");
 	res = pthread_mutex_destroy(&ptr->mutex);
-	if (res) Logger_Abort2(res, "Destroying waitable mutex");
+	if (res) Process_Abort2(res, "Destroying waitable mutex");
 	Mem_Free(handle);
 }
 
@@ -449,7 +517,7 @@ void Waitable_Signal(void* handle) {
 	Mutex_Unlock(&ptr->mutex);
 
 	res = pthread_cond_signal(&ptr->cond);
-	if (res) Logger_Abort2(res, "Signalling event");
+	if (res) Process_Abort2(res, "Signalling event");
 }
 
 void Waitable_Wait(void* handle) {
@@ -459,7 +527,7 @@ void Waitable_Wait(void* handle) {
 	Mutex_Lock(&ptr->mutex);
 	if (!ptr->signalled) {
 		res = pthread_cond_wait(&ptr->cond, &ptr->mutex);
-		if (res) Logger_Abort2(res, "Waitable wait");
+		if (res) Process_Abort2(res, "Waitable wait");
 	}
 	ptr->signalled = false;
 	Mutex_Unlock(&ptr->mutex);
@@ -485,7 +553,7 @@ void Waitable_WaitFor(void* handle, cc_uint32 milliseconds) {
 	Mutex_Lock(&ptr->mutex);
 	if (!ptr->signalled) {
 		res = pthread_cond_timedwait(&ptr->cond, &ptr->mutex, &ts);
-		if (res && res != ETIMEDOUT) Logger_Abort2(res, "Waitable wait for");
+		if (res && res != ETIMEDOUT) Process_Abort2(res, "Waitable wait for");
 	}
 	ptr->signalled = false;
 	Mutex_Unlock(&ptr->mutex);
@@ -996,7 +1064,7 @@ static cc_result Process_RawGetExePath(char* path, int* len) {
 	Mem_Copy(path, info.name, *len);
 	return 0;
 }
-#elif defined CC_BUILD_IRIX
+#elif defined CC_BUILD_IRIX || defined CC_BUILD_HPUX
 static cc_result Process_RawGetExePath(char* path, int* len) {
 	static cc_string file = String_FromConst("ClassiCube");
 
@@ -1089,15 +1157,15 @@ cc_bool Updater_Clean(void) { return true; }
 	#endif
 #elif defined CC_BUILD_FREEBSD
 	#if __x86_64__
-	const struct UpdaterInfo Updater_Info = { "", 1, { { "OpenGL", "cc-fbsd64-gl1" } } };
+	const struct UpdaterInfo Updater_Info = { "", 1, { { "OpenGL", "cc-freebsd-64" } } };
 	#elif __i386__
-	const struct UpdaterInfo Updater_Info = { "", 1, { { "OpenGL", "cc-fbsd32-gl1" } } };
+	const struct UpdaterInfo Updater_Info = { "", 1, { { "OpenGL", "cc-freebsd-32" } } };
 	#else
 	const struct UpdaterInfo Updater_Info = { "&eCompile latest source code to update", 0 };
 	#endif
 #elif defined CC_BUILD_NETBSD
 	#if __x86_64__
-	const struct UpdaterInfo Updater_Info = { "", 1, { { "OpenGL", "cc-netbsd64-gl1" } } };
+	const struct UpdaterInfo Updater_Info = { "", 1, { { "OpenGL", "cc-netbsd-64" } } };
 	#else
 	const struct UpdaterInfo Updater_Info = { "&eCompile latest source code to update", 0 };
 	#endif
@@ -1238,7 +1306,7 @@ static void Platform_InitPosix(void) {
 }
 void Platform_Free(void) { }
 
-#ifdef CC_BUILD_IRIX
+#if defined CC_BUILD_IRIX || defined CC_BUILD_HPUX
 cc_bool Platform_DescribeError(cc_result res, cc_string* dst) {
 	const char* err = strerror(res);
 	if (!err || res >= 1000) return false;
@@ -1532,6 +1600,10 @@ cc_result Platform_Decrypt(const void* data, int len, cc_string* dst) {
 	return 0;
 }
 
+cc_result Platform_GetEntropy(void* data, int len) {
+	return ERR_NOT_SUPPORTED;
+}
+
 
 /*########################################################################################################################*
 *-----------------------------------------------------Configuration-------------------------------------------------------*
@@ -1560,7 +1632,7 @@ int Platform_GetCommandLineArgs(int argc, STRING_REF char** argv, cc_string* arg
 	{
 		/* -d[directory] argument used to change directory data is stored in */
 		if (argv[i][0] == '-' && argv[i][1] == 'd' && argv[i][2]) {
-			Logger_Abort("-d argument no longer supported - cd to desired working directory instead");
+			Process_Abort("-d argument no longer supported - cd to desired working directory instead");
 			continue;
 		}
 		args[i] = String_FromReadonly(argv[i]);

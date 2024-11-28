@@ -55,7 +55,7 @@ TimeMS DateTime_CurrentUTC(void) {
 	return 0;
 }
 
-void DateTime_CurrentLocal(struct DateTime* t) {
+void DateTime_CurrentLocal(struct cc_datetime* t) {
 	rtc_time_t curTime = { 0 };
 	rtc_get(&curTime);
 
@@ -65,6 +65,16 @@ void DateTime_CurrentLocal(struct DateTime* t) {
 	t->hour   = curTime.hour;
 	t->minute = curTime.min;
 	t->second = curTime.sec;
+}
+
+
+/*########################################################################################################################*
+*-------------------------------------------------------Crash handling----------------------------------------------------*
+*#########################################################################################################################*/
+void CrashHandler_Install(void) { }
+
+void Process_Abort2(cc_result result, const char* raw_msg) {
+	Logger_DoAbort(result, raw_msg, NULL);
 }
 
 
@@ -252,9 +262,9 @@ cc_result Socket_CheckWritable(cc_socket s, cc_bool* writable) {
 static void DisableFpuExceptions(void) {
     uint32_t fcr31 = C1_FCR31();
     
-    fcr31 &= ~(C1_CAUSE_OVERFLOW | C1_CAUSE_UNDERFLOW | C1_CAUSE_NOT_IMPLEMENTED | C1_CAUSE_INEXACT_OP);
+    fcr31 &= ~(C1_ENABLE_OVERFLOW | C1_ENABLE_UNDERFLOW | C1_ENABLE_INEXACT_OP);
     fcr31 |= C1_ENABLE_DIV_BY_0 | C1_ENABLE_INVALID_OP;
-    fcr31 |= C1_FCR31_FS;
+    fcr31 |= C1_FCR31_FS; // flush denormals to zero
 
     C1_WRITE_FCR31(fcr31);	
 }

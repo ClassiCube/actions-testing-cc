@@ -21,7 +21,7 @@ static int tex_width = 8, tex_height = 8;
 static vdp1_gouraud_table_t* gourad_base;
 
 static vdp1_cmdt_t* NextPrimitive(void) {
-	if (cmdts_count >= CMDS_COUNT) Logger_Abort("Too many VDP1 commands");
+	if (cmdts_count >= CMDS_COUNT) Process_Abort("Too many VDP1 commands");
 	return &cmdts_all[cmdts_count++];
 }
 
@@ -117,7 +117,7 @@ typedef struct CCTexture {
 	void* addr;
 } CCTexture;
 
-static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
+GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
 	CCTexture* tex = Mem_TryAlloc(1, sizeof(CCTexture));
 	if (!tex) return NULL;
 

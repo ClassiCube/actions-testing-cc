@@ -874,8 +874,9 @@ void CustomModel_Register(struct CustomModel* cm) {
 	static struct ModelTex customDefaultTex;
 
 	CheckMaxVertices();
-	cm->model.name       = cm->name;
-	cm->model.defaultTex = &customDefaultTex;
+	cm->model.name        = cm->name;
+	cm->model.defaultTex  = &customDefaultTex;
+	cm->model.maxVertices = cm->numParts * MODEL_BOX_VERTICES;
 
 	cm->model.MakeParts = Model_NoParts;
 	cm->model.Draw      = CustomModel_Draw;
@@ -2380,6 +2381,7 @@ static void HoldModel_Register(void) {
 *#########################################################################################################################*/
 static void RegisterDefaultModels(void) {
 	Model_RegisterTexture(&human_tex);
+#ifndef CC_DISABLE_EXTRA_MODELS
 	Model_RegisterTexture(&chicken_tex);
 	Model_RegisterTexture(&creeper_tex);
 	Model_RegisterTexture(&pig_tex);
@@ -2389,12 +2391,14 @@ static void RegisterDefaultModels(void) {
 	Model_RegisterTexture(&spider_tex);
 	Model_RegisterTexture(&zombie_tex);
 	Model_RegisterTexture(&skinnedCube_tex);
+#endif
 
 	HumanoidModel_Register();
 	MakeModel(&human_model);
 	Models.Human = &human_model;
 	BlockModel_Register();
 
+#ifndef CC_DISABLE_EXTRA_MODELS
 	ChickenModel_Register();
 	CreeperModel_Register();
 	PigModel_Register();
@@ -2410,6 +2414,7 @@ static void RegisterDefaultModels(void) {
 	CorpseModel_Register();
 	SkinnedCubeModel_Register();
 	HoldModel_Register();
+#endif
 }
 
 static void OnContextLost(void* obj) {

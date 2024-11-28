@@ -16,23 +16,18 @@
 #define UNICODE
 #define _UNICODE
 #endif
-#include <winsock2.h> /* auto includes windows.h */
+#include <windows.h>
+/*
+#include <winsock2.h>
 #include <ws2tcpip.h>
-
-/* === BEGIN shellapi.h === */
-#define SHELLAPI DECLSPEC_IMPORT
-SHELLAPI HINSTANCE WINAPI ShellExecuteW(HWND hwnd, LPCWSTR operation, LPCWSTR file, LPCWSTR parameters, LPCWSTR directory, INT showCmd);
-SHELLAPI HINSTANCE WINAPI ShellExecuteA(HWND hwnd, LPCSTR operation,  LPCSTR file,  LPCSTR  parameters, LPCSTR  directory, INT showCmd);
-/* === END shellapi.h === */
-/* === BEGIN wincrypt.h === */
-typedef struct _CRYPTOAPI_BLOB {
-	DWORD cbData;
-	BYTE* pbData;
-} DATA_BLOB;
-
-static BOOL (WINAPI *_CryptProtectData  )(DATA_BLOB* dataIn, PCWSTR dataDescr, PVOID entropy, PVOID reserved, PVOID promptStruct, DWORD flags, DATA_BLOB* dataOut);
-static BOOL (WINAPI *_CryptUnprotectData)(DATA_BLOB* dataIn, PWSTR* dataDescr, PVOID entropy, PVOID reserved, PVOID promptStruct, DWORD flags, DATA_BLOB* dataOut);
-/* === END wincrypt.h === */
+#include <shellapi.h>
+#include <wincrypt.h>
+*/
+/* Compatibility versions so compiling works on older Windows SDKs */
+#include "../misc/windows/min-winsock2.h"
+#include "../misc/windows/min-shellapi.h"
+#include "../misc/windows/min-wincrypt.h"
+#include "../misc/windows/min-kernel32.h"
 
 static HANDLE heap;
 const cc_result ReturnCode_FileShareViolation = ERROR_SHARING_VIOLATION;
@@ -137,18 +132,11 @@ void Platform_Log(const char* msg, int len) {
 	OutputDebugStringA("\n");
 }
 
-static VOID (WINAPI *_GetSystemTimeAsFileTime)(LPFILETIME sysTime);
-/* Fallback support for NT 3.5 */
-static VOID WINAPI Fallback_GetSystemTimeAsFileTime(LPFILETIME sysTime) {
-	SYSTEMTIME curTime;
-	GetSystemTime(&curTime);
-	SystemTimeToFileTime(&curTime, sysTime);
-}
-
 #define FILETIME_EPOCH      50491123200ULL
 #define FILETIME_UNIX_EPOCH 11644473600ULL
 #define FileTime_TotalSecs(time) ((time / 10000000) + FILETIME_EPOCH)
 #define FileTime_UnixTime(time)  ((time / 10000000) - FILETIME_UNIX_EPOCH)
+
 TimeMS DateTime_CurrentUTC(void) {
 	FILETIME ft; 
 	cc_uint64 raw;
@@ -159,7 +147,7 @@ TimeMS DateTime_CurrentUTC(void) {
 	return FileTime_TotalSecs(raw);
 }
 
-void DateTime_CurrentLocal(struct DateTime* t) {
+void DateTime_CurrentLocal(struct cc_datetime* t) {
 	SYSTEMTIME localTime;
 	GetLocalTime(&localTime);
 
@@ -183,6 +171,94 @@ cc_uint64 Stopwatch_Measure(void) {
 		_GetSystemTimeAsFileTime(&ft);
 		return (cc_uint64)ft.dwLowDateTime | ((cc_uint64)ft.dwHighDateTime << 32);
 	}
+}
+
+
+/*########################################################################################################################*
+*-------------------------------------------------------Crash handling----------------------------------------------------*
+*#########################################################################################################################*/
+static const char* ExceptionDescribe(cc_uint32 code) {
+	switch (code) {
+	case EXCEPTION_ACCESS_VIOLATION:    return "ACCESS_VIOLATION";
+	case EXCEPTION_ILLEGAL_INSTRUCTION: return "ILLEGAL_INSTRUCTION";
+	case EXCEPTION_INT_DIVIDE_BY_ZERO:  return "DIVIDE_BY_ZERO";
+	}
+	return NULL;
+}
+
+static LONG WINAPI UnhandledFilter(struct _EXCEPTION_POINTERS* info) {
+	cc_string msg; char msgBuffer[128 + 1];
+	const char* desc;
+	cc_uint32 code;
+	cc_uintptr addr;
+	DWORD i, numArgs;
+
+	code =  (cc_uint32)info->ExceptionRecord->ExceptionCode;
+	addr = (cc_uintptr)info->ExceptionRecord->ExceptionAddress;
+	desc = ExceptionDescribe(code);
+
+	String_InitArray_NT(msg, msgBuffer);
+	if (desc) {
+		String_Format2(&msg, "Unhandled %c error at %x", desc, &addr);
+	} else {
+		String_Format2(&msg, "Unhandled exception 0x%h at %x", &code, &addr);
+	}
+
+	numArgs = info->ExceptionRecord->NumberParameters;
+	if (numArgs) {
+		numArgs = min(numArgs, EXCEPTION_MAXIMUM_PARAMETERS);
+		String_AppendConst(&msg, " [");
+
+		for (i = 0; i < numArgs; i++) {
+			String_Format1(&msg, "0x%x,", &info->ExceptionRecord->ExceptionInformation[i]);
+		}
+		String_Append(&msg, ']');
+	}
+
+	msg.buffer[msg.length] = '\0';
+	Logger_DoAbort(0, msg.buffer, info->ContextRecord);
+	return EXCEPTION_EXECUTE_HANDLER; /* TODO: different flag */
+}
+
+void CrashHandler_Install(void) {
+	SetUnhandledExceptionFilter(UnhandledFilter);
+}
+
+#if __GNUC__
+/* Don't want compiler doing anything fancy with registers */
+void __attribute__((optimize("O0"))) Process_Abort2(cc_result result, const char* raw_msg) {
+#else
+void Process_Abort2(cc_result result, const char* raw_msg) {
+#endif
+	CONTEXT ctx;
+	CONTEXT* ctx_ptr;
+	#if _M_IX86 && __GNUC__
+	/* Stack frame layout on x86: */
+	/*  [ebp] is previous frame's EBP */
+	/*  [ebp+4] is previous frame's EIP (return address) */
+	/*  address of [ebp+8] is previous frame's ESP */
+	__asm__(
+		"mov 0(%%ebp), %%eax \n\t" /* mov eax, [ebp]     */
+		"mov %%eax, %0       \n\t" /* mov [ctx.Ebp], eax */
+		"mov 4(%%ebp), %%eax \n\t" /* mov eax, [ebp+4]   */
+		"mov %%eax, %1       \n\t" /* mov [ctx.Eip], eax */
+		"lea 8(%%ebp), %%eax \n\t" /* lea eax, [ebp+8]   */
+		"mov %%eax, %2"            /* mov [ctx.Esp], eax */
+		: "=m" (ctx.Ebp), "=m" (ctx.Eip), "=m" (ctx.Esp)
+		:
+		: "eax", "memory"
+	);
+	ctx.ContextFlags = CONTEXT_CONTROL;
+	ctx_ptr = &ctx;
+	#else
+	/* This method is guaranteed to exist on 64 bit windows. */
+	/* NOTE: This is missing in 32 bit Windows 2000 however  */
+	if (_RtlCaptureContext) {
+		_RtlCaptureContext(&ctx);
+		ctx_ptr = &ctx;
+	} else { ctx_ptr = NULL; }
+	#endif
+	Logger_DoAbort(result, raw_msg, ctx_ptr);
 }
 
 
@@ -346,7 +422,7 @@ static DWORD WINAPI ExecThread(void* param) {
 void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char* name) {
 	DWORD threadID;
 	HANDLE thread = CreateThread(NULL, 0, ExecThread, (void*)func, CREATE_SUSPENDED, &threadID);
-	if (!thread) Logger_Abort2(GetLastError(), "Creating thread");
+	if (!thread) Process_Abort2(GetLastError(), "Creating thread");
 	
 	*handle = thread;
 	ResumeThread(thread);
@@ -354,7 +430,7 @@ void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char*
 
 void Thread_Detach(void* handle) {
 	if (!CloseHandle((HANDLE)handle)) {
-		Logger_Abort2(GetLastError(), "Freeing thread handle");
+		Process_Abort2(GetLastError(), "Freeing thread handle");
 	}
 }
 
@@ -379,14 +455,14 @@ void Mutex_Unlock(void* handle) { LeaveCriticalSection((CRITICAL_SECTION*)handle
 void* Waitable_Create(const char* name) {
 	void* handle = CreateEventA(NULL, false, false, NULL);
 	if (!handle) {
-		Logger_Abort2(GetLastError(), "Creating waitable");
+		Process_Abort2(GetLastError(), "Creating waitable");
 	}
 	return handle;
 }
 
 void Waitable_Free(void* handle) {
 	if (!CloseHandle((HANDLE)handle)) {
-		Logger_Abort2(GetLastError(), "Freeing waitable");
+		Process_Abort2(GetLastError(), "Freeing waitable");
 	}
 }
 
@@ -448,28 +524,6 @@ void Platform_LoadSysFonts(void) {
 /* Sanity check to ensure cc_sockaddr struct is large enough to contain all socket addresses supported by this platform */
 static char sockaddr_size_check[sizeof(SOCKADDR_STORAGE) < CC_SOCKETADDR_MAXSIZE ? 1 : -1];
 
-static int (WINAPI *_WSAStartup)(WORD versionRequested, LPWSADATA wsaData);
-static int (WINAPI *_WSACleanup)(void);
-static int (WINAPI *_WSAGetLastError)(void);
-static int (WINAPI *_WSAStringToAddressW)(LPWSTR addressString, INT addressFamily, LPVOID protocolInfo, LPVOID address, LPINT addressLength);
-
-static int (WINAPI *_socket)(int af, int type, int protocol);
-static int (WINAPI *_closesocket)(SOCKET s);
-static int (WINAPI *_connect)(SOCKET s, const struct sockaddr* name, int namelen);
-static int (WINAPI *_shutdown)(SOCKET s, int how);
-
-static int (WINAPI *_ioctlsocket)(SOCKET s, long cmd, u_long* argp);
-static int (WINAPI *_getsockopt)(SOCKET s, int level, int optname, char* optval, int* optlen);
-static int (WINAPI *_recv)(SOCKET s, char* buf, int len, int flags);
-static int (WINAPI *_send)(SOCKET s, const char FAR * buf, int len, int flags);
-static int (WINAPI *_select)(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds, const struct timeval* timeout);
-
-static struct hostent* (WINAPI *_gethostbyname)(const char* name);
-static unsigned short  (WINAPI *_htons)(u_short hostshort);
-static int  (WINAPI *_getaddrinfo )(PCSTR nodeName, PCSTR serviceName, const ADDRINFOA* hints, PADDRINFOA* result);
-static void (WINAPI* _freeaddrinfo)(PADDRINFOA addrInfo);
-
-
 
 static INT WINAPI FallbackParseAddress(LPWSTR addressString, INT addressFamily, LPVOID protocolInfo, LPVOID address, LPINT addressLength) {
 	SOCKADDR_IN* addr4 = (SOCKADDR_IN*)address;
@@ -488,29 +542,6 @@ static INT WINAPI FallbackParseAddress(LPWSTR addressString, INT addressFamily, 
 
 	addr4->sin_family = AF_INET;
 	return 0;
-}
-
-static void LoadWinsockFuncs(void) {
-	static const struct DynamicLibSym funcs[] = {
-		DynamicLib_Sym(WSAStartup),      DynamicLib_Sym(WSACleanup),
-		DynamicLib_Sym(WSAGetLastError), DynamicLib_Sym(WSAStringToAddressW),
-		DynamicLib_Sym(socket),          DynamicLib_Sym(closesocket),
-		DynamicLib_Sym(connect),         DynamicLib_Sym(shutdown),
-		DynamicLib_Sym(ioctlsocket),     DynamicLib_Sym(getsockopt),
-		DynamicLib_Sym(gethostbyname),   DynamicLib_Sym(htons),
-		DynamicLib_Sym(getaddrinfo),     DynamicLib_Sym(freeaddrinfo),
-		DynamicLib_Sym(recv), DynamicLib_Sym(send), DynamicLib_Sym(select)
-	};
-	static const cc_string winsock1 = String_FromConst("wsock32.DLL");
-	static const cc_string winsock2 = String_FromConst("WS2_32.DLL");
-	void* lib;
-
-	DynamicLib_LoadAll(&winsock2, funcs, Array_Elems(funcs), &lib);
-	/* Windows 95 is missing WS2_32 dll */
-	if (!_WSAStartup) DynamicLib_LoadAll(&winsock1, funcs, Array_Elems(funcs), &lib);
-
-	/* Fallback for older OS versions which lack WSAStringToAddressW */
-	if (!_WSAStringToAddressW) _WSAStringToAddressW = FallbackParseAddress;
 }
 
 static cc_result ParseHostOld(char* host, int port, cc_sockaddr* addrs, int* numValidAddrs) {
@@ -565,7 +596,7 @@ static cc_result ParseHostNew(char* host, int port, cc_sockaddr* addrs, int* num
 	portRaw[portStr.length] = '\0';
 
 	res = _getaddrinfo(host, portRaw, &hints, &result);
-	if (res == EAI_NONAME) return SOCK_ERR_UNKNOWN_HOST;
+	if (res == WSAHOST_NOT_FOUND) return SOCK_ERR_UNKNOWN_HOST;
 	if (res) return res;
 
 	/* Prefer IPv4 addresses first */
@@ -943,16 +974,18 @@ void Platform_EncodeString(cc_winstring* dst, const cc_string* src) {
 	cc_unichar* uni;
 	char* ansi;
 	int i;
-	if (src->length > FILENAME_SIZE) Logger_Abort("String too long to expand");
+	if (src->length > FILENAME_SIZE) Process_Abort("String too long to expand");
 
 	uni = dst->uni;
-	for (i = 0; i < src->length; i++) {
+	for (i = 0; i < src->length; i++) 
+	{
 		*uni++ = Convert_CP437ToUnicode(src->buffer[i]);
 	}
 	*uni = '\0';
 
 	ansi = dst->ansi;
-	for (i = 0; i < src->length; i++) {
+	for (i = 0; i < src->length; i++) 
+	{
 		*ansi++ = (char)dst->uni[i];
 	}
 	*ansi = '\0';
@@ -968,34 +1001,14 @@ static void Platform_InitStopwatch(void) {
 	} else { sw_freqDiv = 10; }
 }
 
-static BOOL (WINAPI *_AttachConsole)(DWORD processId);
-static BOOL (WINAPI *_IsDebuggerPresent)(void);
-
-static void LoadKernelFuncs(void) {
-	static const struct DynamicLibSym funcs[] = {
-		DynamicLib_Sym(AttachConsole), DynamicLib_Sym(IsDebuggerPresent),
-		DynamicLib_Sym(GetSystemTimeAsFileTime),
-	};
-
-	static const cc_string kernel32 = String_FromConst("KERNEL32.DLL");
-	void* lib;
-	DynamicLib_LoadAll(&kernel32, funcs, Array_Elems(funcs), &lib);
-	/* Not present on Windows NT 3.5 */
-	if (!_GetSystemTimeAsFileTime) _GetSystemTimeAsFileTime = Fallback_GetSystemTimeAsFileTime;
-}
-
 void Platform_Init(void) {
 	WSADATA wsaData;
 	cc_result res;
 
 	Platform_InitStopwatch();
 	heap = GetProcessHeap();
+	Kernel32_LoadDynamicFuncs();
 
-	LoadWinsockFuncs();
-	res = _WSAStartup(MAKEWORD(2, 2), &wsaData);
-	if (res) Logger_SysWarn(res, "starting WSA");
-
-	LoadKernelFuncs();
 	if (_IsDebuggerPresent) hasDebugger = _IsDebuggerPresent();
 	/* For when user runs from command prompt */
 #if CC_WIN_BACKEND != CC_WIN_BACKEND_TERMINAL
@@ -1004,6 +1017,13 @@ void Platform_Init(void) {
 
 	conHandle = GetStdHandle(STD_OUTPUT_HANDLE);
 	if (conHandle == INVALID_HANDLE_VALUE) conHandle = NULL;
+
+	Winsock_LoadDynamicFuncs();
+	/* Fallback for older OS versions which lack WSAStringToAddressW */
+	if (!_WSAStringToAddressW) _WSAStringToAddressW = FallbackParseAddress;
+	
+	res = _WSAStartup(MAKEWORD(2, 2), &wsaData);
+	if (res) Logger_SysWarn(res, "starting WSA");
 }
 
 void Platform_Free(void) {
@@ -1011,12 +1031,11 @@ void Platform_Free(void) {
 	HeapDestroy(heap);
 }
 
-cc_bool Platform_DescribeErrorExt(cc_result res, cc_string* dst, void* lib) {
+cc_bool Platform_DescribeError(cc_result res, cc_string* dst) {
 	WCHAR chars[NATIVE_STR_LEN];
 	DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
-	if (lib) flags |= FORMAT_MESSAGE_FROM_HMODULE;
 
-	res = FormatMessageW(flags, lib, res, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), 
+	res = FormatMessageW(flags, NULL, res, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), 
 						 chars, NATIVE_STR_LEN, NULL);
 	if (!res) return false;
 
@@ -1024,35 +1043,21 @@ cc_bool Platform_DescribeErrorExt(cc_result res, cc_string* dst, void* lib) {
 	return true;
 }
 
-cc_bool Platform_DescribeError(cc_result res, cc_string* dst) {
-	return Platform_DescribeErrorExt(res, dst, NULL);
-}
-
 
 /*########################################################################################################################*
 *-------------------------------------------------------Encryption--------------------------------------------------------*
 *#########################################################################################################################*/
-
-static void LoadCryptFuncs(void) {
-	static const struct DynamicLibSym funcs[] = {
-		DynamicLib_Sym(CryptProtectData), DynamicLib_Sym(CryptUnprotectData)
-	};
-
-	static const cc_string crypt32 = String_FromConst("CRYPT32.DLL");
-	void* lib;
-	DynamicLib_LoadAll(&crypt32, funcs, Array_Elems(funcs), &lib);
-}
-
 cc_result Platform_Encrypt(const void* data, int len, cc_string* dst) {
 	DATA_BLOB input, output;
 	int i;
 	input.cbData = len; input.pbData = (BYTE*)data;
 
-	if (!_CryptProtectData) LoadCryptFuncs();
+	Crypt32_LoadDynamicFuncs();
 	if (!_CryptProtectData) return ERR_NOT_SUPPORTED;
 	if (!_CryptProtectData(&input, NULL, NULL, NULL, NULL, 0, &output)) return GetLastError();
 
-	for (i = 0; i < output.cbData; i++) {
+	for (i = 0; i < output.cbData; i++) 
+	{
 		String_Append(dst, output.pbData[i]);
 	}
 	LocalFree(output.pbData);
@@ -1064,15 +1069,20 @@ cc_result Platform_Decrypt(const void* data, int len, cc_string* dst) {
 	int i;
 	input.cbData = len; input.pbData = (BYTE*)data;
 
-	if (!_CryptUnprotectData) LoadCryptFuncs();
+	Crypt32_LoadDynamicFuncs();
 	if (!_CryptUnprotectData) return ERR_NOT_SUPPORTED;
 	if (!_CryptUnprotectData(&input, NULL, NULL, NULL, NULL, 0, &output)) return GetLastError();
 
-	for (i = 0; i < output.cbData; i++) {
+	for (i = 0; i < output.cbData; i++) 
+	{
 		String_Append(dst, output.pbData[i]);
 	}
 	LocalFree(output.pbData);
 	return 0;
+}
+
+cc_result Platform_GetEntropy(void* data, int len) {
+	return ERR_NOT_SUPPORTED;
 }
 
 

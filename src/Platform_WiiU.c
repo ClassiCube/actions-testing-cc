@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <poll.h>
 #include <netdb.h>
+#include <malloc.h>
 #include <coreinit/debug.h>
 #include <coreinit/event.h>
 #include <coreinit/fastmutex.h>
@@ -68,7 +69,7 @@ TimeMS DateTime_CurrentUTC(void) {
 	return secs + UNIX_EPOCH_SECONDS + WIIU_EPOCH_ADJUST;
 }
 
-void DateTime_CurrentLocal(struct DateTime* t) {
+void DateTime_CurrentLocal(struct cc_datetime* t) {
 	struct OSCalendarTime loc_time;
 	OSTicksToCalendarTime(OSGetTime(), &loc_time);
 
@@ -91,6 +92,16 @@ cc_uint64 Stopwatch_Measure(void) {
 cc_uint64 Stopwatch_ElapsedMicroseconds(cc_uint64 beg, cc_uint64 end) {
 	if (end < beg) return 0;
 	return OSTicksToMicroseconds(end - beg);
+}
+
+
+/*########################################################################################################################*
+*-------------------------------------------------------Crash handling----------------------------------------------------*
+*#########################################################################################################################*/
+void CrashHandler_Install(void) { }
+
+void Process_Abort2(cc_result result, const char* raw_msg) {
+	Logger_DoAbort(result, raw_msg, NULL);
 }
 
 
@@ -170,7 +181,7 @@ static cc_result File_Do(cc_file* file, const char* path, int mode) {
 }
 
 cc_result File_Open(cc_file* file, const cc_filepath* path) {
-	return File_Do(file, path, O_RDONLY);
+	return File_Do(file, path->buffer, O_RDONLY);
 }
 cc_result File_Create(cc_file* file, const cc_filepath* path) {
 	return File_Do(file, path->buffer, O_RDWR | O_CREAT | O_TRUNC);
@@ -227,7 +238,7 @@ void Thread_Run(void** handle, Thread_StartFunc func, int stackSize, const char*
 	void* stack = memalign(16, stackSize);
 	
 	OSCreateThread(thread, ExecThread,
-                       1, (Thread_StartFunc)func,
+                       1, (void*)func,
                        stack + stackSize, stackSize,
                        16, OS_THREAD_ATTRIB_AFFINITY_ANY);
 

@@ -51,7 +51,8 @@ enum InputButtons {
 	
 	CCKEY_VOLUME_MUTE, CCKEY_VOLUME_UP, CCKEY_VOLUME_DOWN, CCKEY_SLEEP,
 	CCKEY_MEDIA_NEXT, CCKEY_MEDIA_PREV, CCKEY_MEDIA_PLAY, CCKEY_MEDIA_STOP,
-	CCKEY_BROWSER_PREV, CCKEY_BROWSER_NEXT, CCKEY_BROWSER_REFRESH, CCKEY_BROWSER_STOP, CCKEY_BROWSER_SEARCH, CCKEY_BROWSER_FAVORITES, CCKEY_BROWSER_HOME,
+	CCKEY_BROWSER_PREV, CCKEY_BROWSER_NEXT, CCKEY_BROWSER_REFRESH, CCKEY_BROWSER_STOP,
+	CCKEY_BROWSER_SEARCH, CCKEY_BROWSER_FAVORITES, CCKEY_BROWSER_HOME,
 	CCKEY_LAUNCH_MAIL, CCKEY_LAUNCH_MEDIA, CCKEY_LAUNCH_APP1, CCKEY_LAUNCH_CALC, 
 
 	CCPAD_1, CCPAD_2, CCPAD_3, CCPAD_4, /* Primary buttons (e.g. A, B, X, Y) */
@@ -79,8 +80,8 @@ extern struct _InputState {
 	cc_bool RawMode;
 	/* Sources available for input (Mouse/Keyboard, Gamepad) */
 	cc_uint8 Sources;
-	/* Function that overrides all normal input handling (e.g. for virtual keyboard) */
-	void (*DownHook)(int btn, struct InputDevice* device);
+	/* Function that can override all normal input handling (e.g. for virtual keyboard) */
+	cc_bool (*DownHook)(int btn, struct InputDevice* device);
 } Input;
 
 /* Sets Input_Pressed[key] to true and raises InputEvents.Down */
@@ -185,9 +186,9 @@ extern struct TouchPointer touches[INPUT_MAX_POINTERS];
 struct Pointer { 
 	int x, y;
 	/* Function that overrides all normal pointer input press handling */
-	void (*DownHook)(int index);
+	cc_bool (*DownHook)(int index);
 	/* Function that overrides all normal pointer input release handling */
-	void (*UpHook)  (int index);
+	cc_bool (*UpHook)  (int index);
 };
 CC_VAR extern struct Pointer Pointers[INPUT_MAX_POINTERS];
 

@@ -93,9 +93,19 @@ TimeMS DateTime_CurrentUTC(void) {
 	return (cc_uint64)cur.tv_sec + UNIX_EPOCH_SECONDS;
 }
 
-extern void interop_GetLocalTime(struct DateTime* t);
-void DateTime_CurrentLocal(struct DateTime* t) {
+extern void interop_GetLocalTime(struct cc_datetime* t);
+void DateTime_CurrentLocal(struct cc_datetime* t) {
 	interop_GetLocalTime(t);
+}
+
+
+/*########################################################################################################################*
+*-------------------------------------------------------Crash handling----------------------------------------------------*
+*#########################################################################################################################*/
+void CrashHandler_Install(void) { }
+
+void Process_Abort2(cc_result result, const char* raw_msg) {
+	Logger_DoAbort(result, raw_msg, NULL);
 }
 
 
@@ -256,7 +266,7 @@ extern void interop_InitSockets(void);
 cc_result Socket_ParseAddress(const cc_string* address, int port, cc_sockaddr* addrs, int* numValidAddrs) {
 	int len = String_EncodeUtf8(addrs[0].data, address);
 	/* TODO can this ever happen */
-	if (len >= CC_SOCKETADDR_MAXSIZE) Logger_Abort("Overrun in Socket_ParseAddress");
+	if (len >= CC_SOCKETADDR_MAXSIZE) Process_Abort("Overrun in Socket_ParseAddress");
 
 	addrs[0].size  = port;
 	*numValidAddrs = 1;
@@ -389,8 +399,15 @@ void Platform_Free(void) { }
 /*########################################################################################################################*
 *-------------------------------------------------------Encryption--------------------------------------------------------*
 *#########################################################################################################################*/
-cc_result Platform_Encrypt(const void* data, int len, cc_string* dst) { return ERR_NOT_SUPPORTED; }
-cc_result Platform_Decrypt(const void* data, int len, cc_string* dst) { return ERR_NOT_SUPPORTED; }
+cc_result Platform_Encrypt(const void* data, int len, cc_string* dst) { 
+	return ERR_NOT_SUPPORTED; 
+}
+cc_result Platform_Decrypt(const void* data, int len, cc_string* dst) { 
+	return ERR_NOT_SUPPORTED; 
+}
+cc_result Platform_GetEntropy(void* data, int len) {
+	return ERR_NOT_SUPPORTED;
+}
 
 
 /*########################################################################################################################*

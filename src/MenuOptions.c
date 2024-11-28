@@ -239,7 +239,7 @@ static int MenuOptionsScreen_AddButton(struct MenuOptionsScreen* s, const char* 
 
 static void MenuOptionsScreen_EndButtons(struct MenuOptionsScreen* s, Widget_LeftClick backClick) {
 	struct ButtonWidget* btn;
-	int i, col, row, half = s->numButtons / 2;
+	int i, col, row, half = (s->numButtons + 1) / 2;
 	int begRow = 2 - half;
 	if (s->numButtons & 1) begRow--;
 	begRow = max(-3, begRow);
@@ -474,6 +474,7 @@ static void MenuOptionsScreen_Free(void* screen) {
 	struct MenuOptionsScreen* s = (struct MenuOptionsScreen*)screen;
 	Event_Unregister_(&UserEvents.HackPermsChanged, screen, MenuOptionsScreen_OnHacksChanged);
 	Event_Unregister_(&WorldEvents.LightingModeChanged, screen, MenuOptionsScreen_OnLightingModeServerChanged);
+	MenuInputOverlay_Close(false);
 }
 
 static void MenuOptionsScreen_Layout(void* screen) {

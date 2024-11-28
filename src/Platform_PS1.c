@@ -54,8 +54,18 @@ TimeMS DateTime_CurrentUTC(void) {
 	return 0;
 }
 
-void DateTime_CurrentLocal(struct DateTime* t) {
-	Mem_Set(t, 0, sizeof(struct DateTime));
+void DateTime_CurrentLocal(struct cc_datetime* t) {
+	Mem_Set(t, 0, sizeof(struct cc_datetime));
+}
+
+
+/*########################################################################################################################*
+*-------------------------------------------------------Crash handling----------------------------------------------------*
+*#########################################################################################################################*/
+void CrashHandler_Install(void) { }
+
+void Process_Abort2(cc_result result, const char* raw_msg) {
+	Logger_DoAbort(result, raw_msg, NULL);
 }
 
 

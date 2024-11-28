@@ -39,7 +39,7 @@ enum OPCODE_ {
 	OPCODE_DEFINE_EFFECT,       OPCODE_SPAWN_EFFECT,
 	OPCODE_DEFINE_MODEL, OPCODE_DEFINE_MODEL_PART, OPCODE_UNDEFINE_MODEL,
 	OPCODE_PLUGIN_MESSAGE, OPCODE_ENTITY_TELEPORT_EXT,
-	OPCODE_LIGHTING_MODE,
+	OPCODE_LIGHTING_MODE, OPCODE_CINEMATIC_GUI,
 
 	OPCODE_COUNT
 };
@@ -67,7 +67,7 @@ extern struct IGameComponent Protocol_Component;
 void Protocol_Tick(void);
 
 extern cc_bool cpe_needD3Fix;
-void Classic_SendChat(const cc_string* text, cc_bool partial);\
+void Classic_SendChat(const cc_string* text, cc_bool partial);
 void Classic_SendSetBlock(int x, int y, int z, cc_bool place, BlockID block);
 void Classic_SendLogin(void);
 void CPE_SendPlayerClick(int button, cc_bool pressed, cc_uint8 targetId, struct RayTracer* t);

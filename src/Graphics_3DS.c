@@ -418,7 +418,7 @@ static void ToMortonTexture(C3D_Tex* tex, int originX, int originY,
 }
 
 
-static GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
+GfxResourceID Gfx_AllocTexture(struct Bitmap* bmp, int rowWidth, cc_uint8 flags, cc_bool mipmaps) {
 	struct GPUTexture* tex = GPUTexture_Alloc();
 	bool success = CreateNativeTexture(&tex->texture, bmp->width, bmp->height);
 	if (!success) return NULL;
@@ -662,7 +662,7 @@ static cc_uint16* gfx_indices;
 GfxResourceID Gfx_CreateIb2(int count, Gfx_FillIBFunc fillFunc, void* obj) {
 	if (!gfx_indices) {
 		gfx_indices = linearAlloc(count * sizeof(cc_uint16));
-		if (!gfx_indices) Logger_Abort("Failed to allocate memory for index buffer");
+		if (!gfx_indices) Process_Abort("Failed to allocate memory for index buffer");
 	}
 
 	fillFunc(gfx_indices, count, obj);

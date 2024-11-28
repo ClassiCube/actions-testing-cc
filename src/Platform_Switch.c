@@ -92,7 +92,7 @@ TimeMS DateTime_CurrentUTC(void) {
 	return timestamp + UNIX_EPOCH_SECONDS;
 }
 
-void DateTime_CurrentLocal(struct DateTime* t) {
+void DateTime_CurrentLocal(struct cc_datetime* t) {
 	u64 timestamp = 0;
 	TimeCalendarTime calTime = { 0 };
 	timeGetCurrentTime(TimeType_Default, &timestamp);
@@ -104,6 +104,16 @@ void DateTime_CurrentLocal(struct DateTime* t) {
 	t->hour   = calTime.hour;
 	t->minute = calTime.minute;
 	t->second = calTime.second;
+}
+
+
+/*########################################################################################################################*
+*-------------------------------------------------------Crash handling----------------------------------------------------*
+*#########################################################################################################################*/
+void CrashHandler_Install(void) { }
+
+void Process_Abort2(cc_result result, const char* raw_msg) {
+	Logger_DoAbort(result, raw_msg, NULL);
 }
 
 
