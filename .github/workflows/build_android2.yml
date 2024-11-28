@@ -82,7 +82,7 @@ jobs:
           # - if using apksigner, zipalign must be called before apksigner
           # - if using jarsigner, zipalign must be called after jarsigner
           $TOOLS_ROOT/zipalign -f 4 cc-unsigned.apk cc-signed.apk
-          $TOOLS_ROOT/apksigner sign --ks debug.keystore --ks-pass pass:android cc-signed.apk
+          $TOOLS_ROOT/apksigner sign --ks debug.keystore --ks-pass pass:android --max-sdk-version 19 cc-signed.apk
           cp cc-signed.apk $ROOT_DIR/src/cc.apk
 
           #cp cc-unsigned.apk cc-signed.apk
