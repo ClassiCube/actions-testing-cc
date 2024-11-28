@@ -1163,16 +1163,18 @@ static const char* SignalDescribe(int type) {
 
 static void SignalHandler(int sig, siginfo_t* info, void* ctx) {
 	cc_string msg; char msgBuffer[128 + 1];
+	struct sigaction sa = { 0 };
 	const char* desc;
 	int type, code;
 	cc_uintptr addr;
 
 	/* Uninstall handler to avoid chance of infinite loop */
-	signal(SIGSEGV, SIG_DFL);
-	signal(SIGBUS,  SIG_DFL);
-	signal(SIGILL,  SIG_DFL);
-	signal(SIGABRT, SIG_DFL);
-	signal(SIGFPE,  SIG_DFL);
+	sa.sa_sigaction = SIG_DFL;
+	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGBUS,  &sa, NULL);
+	sigaction(SIGILL,  &sa, NULL);
+	sigaction(SIGABRT, &sa, NULL);
+	sigaction(SIGFPE,  &sa, NULL);
 
 	type = info->si_signo;
 	code = info->si_code;
