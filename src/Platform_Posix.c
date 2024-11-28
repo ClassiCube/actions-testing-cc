@@ -1229,9 +1229,12 @@ cc_bool DynamicLib_DescribeError(cc_string* dst) {
 *--------------------------------------------------------Platform---------------------------------------------------------*
 *#########################################################################################################################*/
 static void Platform_InitPosix(void) {
-	signal(SIGCHLD, SIG_IGN);
+	struct sigaction sa = { 0 };
+	sa.sa_handler = SIG_IGN;
+
+	sigaction(SIGCHLD, &sa, NULL);
 	/* So writing to closed socket doesn't raise SIGPIPE */
-	signal(SIGPIPE, SIG_IGN);
+	sigaction(SIGPIPE, &sa, NULL);
 }
 void Platform_Free(void) { }
 
