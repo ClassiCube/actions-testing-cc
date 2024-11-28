@@ -1169,7 +1169,7 @@ static void SignalHandler(int sig, siginfo_t* info, void* ctx) {
 	cc_uintptr addr;
 
 	/* Uninstall handler to avoid chance of infinite loop */
-	sa.sa_sigaction = SIG_DFL;
+	sa.sa_handler = SIG_DFL;
 	sigaction(SIGSEGV, &sa, NULL);
 	sigaction(SIGBUS,  &sa, NULL);
 	sigaction(SIGILL,  &sa, NULL);
