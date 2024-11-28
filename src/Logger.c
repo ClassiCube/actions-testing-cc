@@ -1195,9 +1195,11 @@ static void SignalHandler(int sig, siginfo_t* info, void* ctx) {
 }
 
 void Logger_Hook(void) {
-	struct sigaction sa, old;
+	struct sigaction sa = { 0 };
+	struct sigaction old;
+	/* sigemptyset(&sa.sa_mask); */
+	/* NOTE: Calling sigemptyset breaks when using recent Android NDK and trying to run on old devices */
 	sa.sa_sigaction = SignalHandler;
-	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = SA_RESTART | SA_SIGINFO;
 
 	sigaction(SIGSEGV, &sa, &old);
