@@ -51,7 +51,10 @@ jobs:
       - name: Generate combined Intel + PowerPC build
         shell: bash
         id: gen_universal
-        run: i386-apple-darwin8-lipo -create -output src/cc-mac32-universal src/cc-mac32-gl1 src/cc-mac32-ppc
+        run: |
+          cd src
+          PATH=$PATH:/usr/local/compiler/target/bin
+          i386-apple-darwin8-lipo -create -output cc-mac32-universal cc-mac32-gl1 cc-mac32-ppc
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
