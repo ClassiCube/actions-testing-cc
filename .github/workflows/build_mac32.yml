@@ -48,6 +48,10 @@ jobs:
           PATH=$PATH:/usr/local/compiler/ppc/target/bin
           powerpc-apple-darwin9-base-gcc *.c Window_cocoa.m ${{ env.COMMON_FLAGS }} $LATEST_FLAG -o cc-mac32-ppc -mmacosx-version-min=10.2.0 -m32 -framework Cocoa -framework OpenGL -framework IOKit -lobjc
 
+      - name: Generate combined Intel + PowerPC build
+        shell: bash
+        id: gen_universal
+        run: i386-apple-darwin8-lipo -create -output src/cc-mac32-universal src/cc-mac32-gl1 src/cc-mac32-ppc
 
       - uses: ./.github/actions/notify_failure
         if: ${{ always() && steps.compile.outcome == 'failure' }}
@@ -73,6 +77,12 @@ jobs:
         with:
           SOURCE_FILE: 'src/cc-mac32-ppc'
           DEST_NAME: 'ClassiCube-mac32-PPC'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.gen_universal.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'src/cc-mac32-universal'
+          DEST_NAME: 'ClassiCube-mac32'
           
           
       - uses: ./.github/actions/notify_success
