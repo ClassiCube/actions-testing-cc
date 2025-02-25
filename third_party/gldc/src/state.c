@@ -1,366 +1,113 @@
-#include <stddef.h>
 #include <string.h>
-#include <stdio.h>
+#include <kos.h>
+#include <dc/pvr.h>
+#include "gldc.h"
 
-#include "private.h"
+GLboolean DEPTH_TEST_ENABLED;
+GLboolean DEPTH_MASK_ENABLED;
 
-GLboolean STATE_DIRTY = GL_TRUE;
+GLboolean CULLING_ENABLED;
 
-GLenum DEPTH_FUNC            = GL_LESS;
-GLboolean DEPTH_TEST_ENABLED = GL_FALSE;
-GLboolean DEPTH_MASK_ENABLED = GL_FALSE;
+GLboolean FOG_ENABLED;
+GLboolean ALPHA_TEST_ENABLED;
 
-GLboolean CULLING_ENABLED = GL_FALSE;
+GLboolean SCISSOR_TEST_ENABLED;
+GLenum SHADE_MODEL = PVR_SHADE_GOURAUD;
 
-GLboolean FOG_ENABLED        = GL_FALSE;
-GLboolean ALPHA_TEST_ENABLED = GL_FALSE;
+GLboolean BLEND_ENABLED;
 
-GLboolean SCISSOR_TEST_ENABLED = GL_FALSE;
-GLenum SHADE_MODEL = GL_SMOOTH;
-GLboolean ZNEAR_CLIPPING_ENABLED = GL_TRUE;
+GLboolean TEXTURES_ENABLED;
+GLboolean AUTOSORT_ENABLED;
 
-GLboolean BLEND_ENABLED = GL_FALSE;
-GLenum BLEND_SRC_FACTOR = PVR_BLEND_ZERO;
-GLenum BLEND_DST_FACTOR = PVR_BLEND_ONE;
-
-GLboolean TEXTURES_ENABLED = GL_FALSE;
-
-
-static struct {
-    GLint x;
-    GLint y;
-    GLsizei width;
-    GLsizei height;
-    GLboolean applied;
-} scissor_rect = {0, 0, 640, 480, false};
-
-
-void _glUpdatePVRTextureContext(PolyContext *context, GLshort textureUnit) {
-    const TextureObject *tx1 = TEXTURE_ACTIVE;
-
-    /* Disable all texturing to start with */
-    context->txr.enable = GPU_TEXTURE_DISABLE;
-    context->txr2.enable = GPU_TEXTURE_DISABLE;
-    context->txr2.alpha = GPU_TXRALPHA_DISABLE;
-
-    if(!TEXTURES_ENABLED || !tx1 || !tx1->data) {
-        context->txr.base = NULL;
-        return;
-    }
-
-    context->txr.alpha = (BLEND_ENABLED || ALPHA_TEST_ENABLED) ? GPU_TXRALPHA_ENABLE : GPU_TXRALPHA_DISABLE;
-
-    GLuint filter = GPU_FILTER_NEAREST;
-
-    if(tx1->minFilter == GL_LINEAR && tx1->magFilter == GL_LINEAR) {
-        filter = GPU_FILTER_BILINEAR;
-    }
-
-    if(tx1->data) {
-        context->txr.enable = GPU_TEXTURE_ENABLE;
-        context->txr.filter = filter;
-        context->txr.width = tx1->width;
-        context->txr.height = tx1->height;
-        context->txr.mipmap = GL_FALSE;
-        context->txr.mipmap_bias = tx1->mipmap_bias;
-        
-	context->txr.base = tx1->data;
-        context->txr.format = tx1->color;
-        context->txr.env = tx1->env;
-        context->txr.uv_flip = GPU_UVFLIP_NONE;
-        context->txr.uv_clamp = GPU_UVCLAMP_NONE;
+static inline int DimensionFlag(int w) {
+    switch(w) {
+        case 16: return 1;
+        case 32: return 2;
+        case 64: return 3;
+        case 128: return 4;
+        case 256: return 5;
+        case 512: return 6;
+        case 1024: return 7;
+        case 8:
+        default:
+            return 0;
     }
 }
 
-void _glInitContext() {
-    scissor_rect.x = 0;
-    scissor_rect.y = 0;
-    scissor_rect.width  = vid_mode->width;
-    scissor_rect.height = vid_mode->height;
+void apply_poly_header(pvr_poly_hdr_t* dst, int list_type) {
+    TextureObject* tx1 = TEXTURE_ACTIVE;
 
-    glClearDepth(1.0f);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glShadeModel(GL_SMOOTH);
+    int gen_culling = CULLING_ENABLED    ? PVR_CULLING_CW : PVR_CULLING_SMALL;
+    int depth_comp  = DEPTH_TEST_ENABLED ? PVR_DEPTHCMP_GEQUAL : PVR_DEPTHCMP_ALWAYS;
+    int depth_write = DEPTH_MASK_ENABLED ? PVR_DEPTHWRITE_ENABLE : PVR_DEPTHWRITE_DISABLE;
 
-    glDisable(GL_ALPHA_TEST);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_BLEND);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_TEXTURE_2D);
-    glDisable(GL_FOG);
-}
+    int clip_mode = SCISSOR_TEST_ENABLED ? PVR_USERCLIP_INSIDE : PVR_USERCLIP_DISABLE;
+    int fog_type  = FOG_ENABLED          ? PVR_FOG_TABLE : PVR_FOG_DISABLE;
 
-GLAPI void APIENTRY glEnable(GLenum cap) {
-    switch(cap) {
-        case GL_TEXTURE_2D:
-            if(TEXTURES_ENABLED != GL_TRUE) {
-                TEXTURES_ENABLED = GL_TRUE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        break;
-        case GL_CULL_FACE: {
-            CULLING_ENABLED = GL_TRUE;
-            STATE_DIRTY = GL_TRUE;
-        } break;
-        case GL_DEPTH_TEST: {
-            if(DEPTH_TEST_ENABLED != GL_TRUE) {
-                DEPTH_TEST_ENABLED = GL_TRUE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        } break;
-        case GL_BLEND: {
-            if(BLEND_ENABLED != GL_TRUE) {
-                BLEND_ENABLED = GL_TRUE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        } break;
-        case GL_SCISSOR_TEST: {
-            SCISSOR_TEST_ENABLED = GL_TRUE;
-            STATE_DIRTY = GL_TRUE;
-        } break;
-        case GL_FOG:
-            if(FOG_ENABLED != GL_TRUE) {
-                FOG_ENABLED = GL_TRUE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        break;
-        case GL_ALPHA_TEST: {
-            if(ALPHA_TEST_ENABLED != GL_TRUE) {
-                ALPHA_TEST_ENABLED = GL_TRUE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        } break;
-        case GL_NEARZ_CLIPPING_KOS:
-            ZNEAR_CLIPPING_ENABLED = GL_TRUE;
-            STATE_DIRTY = GL_TRUE;
-        break;
-    default:
-        break;
-    }
-}
+    int gen_alpha = (BLEND_ENABLED || ALPHA_TEST_ENABLED) ? PVR_ALPHA_ENABLE : PVR_ALPHA_DISABLE;
+    int blend_src = PVR_BLEND_SRCALPHA;
+    int blend_dst = PVR_BLEND_INVSRCALPHA;
 
-GLAPI void APIENTRY glDisable(GLenum cap) {
-    switch(cap) {
-        case GL_TEXTURE_2D:
-            if(TEXTURES_ENABLED != GL_FALSE) {
-                TEXTURES_ENABLED = GL_FALSE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        break;
-        case GL_CULL_FACE: {
-            CULLING_ENABLED = GL_FALSE;
-            STATE_DIRTY = GL_TRUE;
-        } break;
-        case GL_DEPTH_TEST: {
-            if(DEPTH_TEST_ENABLED != GL_FALSE) {
-                DEPTH_TEST_ENABLED = GL_FALSE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        } break;
-        case GL_BLEND: {
-            if(BLEND_ENABLED != GL_FALSE) {
-                BLEND_ENABLED = GL_FALSE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        } break;
-        case GL_SCISSOR_TEST: {
-            SCISSOR_TEST_ENABLED = GL_FALSE;
-            STATE_DIRTY = GL_TRUE;
-        } break;
-        case GL_FOG:
-            if(FOG_ENABLED != GL_FALSE) {
-                FOG_ENABLED = GL_FALSE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        break;
-        case GL_ALPHA_TEST: {
-            if(ALPHA_TEST_ENABLED != GL_FALSE) {
-                ALPHA_TEST_ENABLED = GL_FALSE;
-                STATE_DIRTY = GL_TRUE;
-            }
-        } break;
-        case GL_NEARZ_CLIPPING_KOS:
-            ZNEAR_CLIPPING_ENABLED = GL_FALSE;
-            STATE_DIRTY = GL_TRUE;
-        break;
-    default:
-        break;
-    }
-}
-
-/* Depth Testing */
-GLAPI void APIENTRY glClearDepthf(GLfloat depth) {
-    glClearDepth(depth);
-}
-
-GLAPI void APIENTRY glClearDepth(GLfloat depth) {
-    /* We reverse because using invW means that farther Z == lower number */
-    GPUSetClearDepth(MIN(1.0f - depth, PVR_MIN_Z));
-}
-
-GLAPI void APIENTRY glDepthMask(GLboolean flag) {
-    if(DEPTH_MASK_ENABLED != flag) {
-        DEPTH_MASK_ENABLED = flag;
-        STATE_DIRTY = GL_TRUE;
-    }
-}
-
-GLAPI void APIENTRY glDepthFunc(GLenum func) {
-    DEPTH_FUNC = func;
-    STATE_DIRTY = GL_TRUE;
-}
-
-/* Shading - Flat or Goraud */
-GLAPI void APIENTRY glShadeModel(GLenum mode) {
-    SHADE_MODEL = mode;
-    STATE_DIRTY = GL_TRUE;
-}
-
-/* Blending */
-GLAPI void APIENTRY glBlendFunc(GLenum sfactor, GLenum dfactor) {
-    BLEND_SRC_FACTOR = sfactor;
-    BLEND_DST_FACTOR = dfactor;
-    STATE_DIRTY = GL_TRUE;
-}
-
-
-GLAPI void APIENTRY glAlphaFunc(GLenum func, GLclampf ref) {
-    GLubyte val = (GLubyte)(ref * 255.0f);
-    GPUSetAlphaCutOff(val);
-}
-
-void APIENTRY glScissor(GLint x, GLint y, GLsizei width, GLsizei height) {
-
-    if(scissor_rect.x == x &&
-        scissor_rect.y == y &&
-        scissor_rect.width == width &&
-        scissor_rect.height == height) {
-        return;
+    if (list_type == PVR_LIST_OP_POLY) {
+        /* Opaque polys are always one/zero */
+        blend_src  = PVR_BLEND_ONE;
+        blend_dst  = PVR_BLEND_ZERO;
+    } else if (list_type == PVR_LIST_PT_POLY) {
+        /* Punch-through polys require fixed blending and depth modes */
+        depth_comp = PVR_DEPTHCMP_LEQUAL;
+    } else if (list_type == PVR_LIST_TR_POLY && AUTOSORT_ENABLED) {
+        /* Autosort mode requires this mode for transparent polys */
+        depth_comp = PVR_DEPTHCMP_GEQUAL;
     }
 
-    scissor_rect.x = x;
-    scissor_rect.y = y;
-    scissor_rect.width = width;
-    scissor_rect.height = height;
-    scissor_rect.applied = false;
-    STATE_DIRTY = GL_TRUE; // FIXME: do we need this?
-
-    _glApplyScissor(false);
-}
-
-/* Setup the hardware user clip rectangle.
-
-   The minimum clip rectangle is a 32x32 area which is dependent on the tile
-   size use by the tile accelerator. The PVR swithes off rendering to tiles
-   outside or inside the defined rectangle dependant upon the 'clipmode'
-   bits in the polygon header.
-
-   Clip rectangles therefore must have a size that is some multiple of 32.
-
-    glScissor(0, 0, 32, 32) allows only the 'tile' in the lower left
-    hand corner of the screen to be modified and glScissor(0, 0, 0, 0)
-    disallows modification to all 'tiles' on the screen.
-
-    We call this in the following situations:
-
-     - glEnable(GL_SCISSOR_TEST) is called
-     - glScissor() is called
-     - After glKosSwapBuffers()
-
-    This ensures that a clip command is added to every vertex list
-    at the right place, either when enabling the scissor test, or
-    when the scissor test changes.
-*/
-void _glApplyScissor(bool force) {
-    /* Don't do anyting if clipping is disabled */
-    if(!SCISSOR_TEST_ENABLED) {
-        return;
+    int txr_enable, txr_alpha;
+    if (!TEXTURES_ENABLED || !tx1) {
+        /* Disable all texturing to start with */
+        txr_enable = PVR_TEXTURE_DISABLE;
+    } else {
+        txr_alpha  = (BLEND_ENABLED || ALPHA_TEST_ENABLED) ? PVR_TXRALPHA_ENABLE : PVR_TXRALPHA_DISABLE;
+        txr_enable = PVR_TEXTURE_ENABLE;
     }
 
-    /* Don't apply if we already applied - nothing changed */
-    if(scissor_rect.applied && !force) {
-        return;
+    /* The base values for CMD */
+    dst->cmd = PVR_CMD_POLYHDR;
+    dst->cmd |= txr_enable << 3;
+    /* Force bits 18 and 19 on to switch to 6 triangle strips */
+    dst->cmd |= 0xC0000;
+
+    /* Or in the list type, shading type, color and UV formats */
+    dst->cmd |= (list_type             << PVR_TA_CMD_TYPE_SHIFT)     & PVR_TA_CMD_TYPE_MASK;
+    dst->cmd |= (PVR_CLRFMT_ARGBPACKED << PVR_TA_CMD_CLRFMT_SHIFT)   & PVR_TA_CMD_CLRFMT_MASK;
+    dst->cmd |= (SHADE_MODEL           << PVR_TA_CMD_SHADE_SHIFT)    & PVR_TA_CMD_SHADE_MASK;
+    dst->cmd |= (PVR_UVFMT_32BIT       << PVR_TA_CMD_UVFMT_SHIFT)    & PVR_TA_CMD_UVFMT_MASK;
+    dst->cmd |= (clip_mode             << PVR_TA_CMD_USERCLIP_SHIFT) & PVR_TA_CMD_USERCLIP_MASK;
+
+    dst->mode1  = (depth_comp  << PVR_TA_PM1_DEPTHCMP_SHIFT)   & PVR_TA_PM1_DEPTHCMP_MASK;
+    dst->mode1 |= (gen_culling << PVR_TA_PM1_CULLING_SHIFT)    & PVR_TA_PM1_CULLING_MASK;
+    dst->mode1 |= (depth_write << PVR_TA_PM1_DEPTHWRITE_SHIFT) & PVR_TA_PM1_DEPTHWRITE_MASK;
+    dst->mode1 |= (txr_enable  << PVR_TA_PM1_TXRENABLE_SHIFT)  & PVR_TA_PM1_TXRENABLE_MASK;
+
+    dst->mode2  = (blend_src << PVR_TA_PM2_SRCBLEND_SHIFT) & PVR_TA_PM2_SRCBLEND_MASK;
+    dst->mode2 |= (blend_dst << PVR_TA_PM2_DSTBLEND_SHIFT) & PVR_TA_PM2_DSTBLEND_MASK;
+    dst->mode2 |= (fog_type  << PVR_TA_PM2_FOG_SHIFT)      & PVR_TA_PM2_FOG_MASK;
+    dst->mode2 |= (gen_alpha << PVR_TA_PM2_ALPHA_SHIFT)    & PVR_TA_PM2_ALPHA_MASK;
+
+    if (txr_enable == PVR_TEXTURE_DISABLE) {
+        dst->mode3 = 0;
+    } else {
+        dst->mode2 |= (txr_alpha                << PVR_TA_PM2_TXRALPHA_SHIFT) & PVR_TA_PM2_TXRALPHA_MASK;
+        dst->mode2 |= (PVR_FILTER_NEAREST       << PVR_TA_PM2_FILTER_SHIFT)   & PVR_TA_PM2_FILTER_MASK;
+        dst->mode2 |= (PVR_MIPBIAS_NORMAL       << PVR_TA_PM2_MIPBIAS_SHIFT)  & PVR_TA_PM2_MIPBIAS_MASK;
+        dst->mode2 |= (PVR_TXRENV_MODULATEALPHA << PVR_TA_PM2_TXRENV_SHIFT)   & PVR_TA_PM2_TXRENV_MASK;
+
+        dst->mode2 |= (DimensionFlag(tx1->width)  << PVR_TA_PM2_USIZE_SHIFT) & PVR_TA_PM2_USIZE_MASK;
+        dst->mode2 |= (DimensionFlag(tx1->height) << PVR_TA_PM2_VSIZE_SHIFT) & PVR_TA_PM2_VSIZE_MASK;
+
+        dst->mode3  = (0          << PVR_TA_PM3_MIPMAP_SHIFT) & PVR_TA_PM3_MIPMAP_MASK;
+        dst->mode3 |= (tx1->color << PVR_TA_PM3_TXRFMT_SHIFT) & PVR_TA_PM3_TXRFMT_MASK;
+        dst->mode3 |= ((uint32_t)tx1->data & 0x00fffff8) >> 3;
     }
 
-    PVRTileClipCommand c;
-
-    GLint miny, maxx, maxy;
-
-    GLsizei scissor_width  = MAX(MIN(scissor_rect.width,  vid_mode->width),  0);
-    GLsizei scissor_height = MAX(MIN(scissor_rect.height, vid_mode->height), 0);
-
-    /* force the origin to the lower left-hand corner of the screen */
-    miny = (vid_mode->height - scissor_height) - scissor_rect.y;
-    maxx = (scissor_width + scissor_rect.x);
-    maxy = (scissor_height + miny);
-
-    /* load command structure while mapping screen coords to TA tiles */
-    c.flags = GPU_CMD_USERCLIP;
-    c.d1 = c.d2 = c.d3 = 0;
-
-    uint16_t vw = vid_mode->width >> 5;
-    uint16_t vh = vid_mode->height >> 5;
-
-    c.sx = CLAMP(scissor_rect.x >> 5, 0, vw);
-    c.sy = CLAMP(miny >> 5, 0, vh);
-    c.ex = CLAMP((maxx >> 5) - 1, 0, vw);
-    c.ey = CLAMP((maxy >> 5) - 1, 0, vh);
-
-    aligned_vector_push_back(&OP_LIST.vector, &c, 1);
-    aligned_vector_push_back(&PT_LIST.vector, &c, 1);
-    aligned_vector_push_back(&TR_LIST.vector, &c, 1);
-
-    scissor_rect.applied = true;
-}
-
-void APIENTRY glGetIntegerv(GLenum pname, GLint *params) {
-    switch(pname) {
-        case GL_TEXTURE_FREE_MEMORY_ATI:
-        case GL_FREE_TEXTURE_MEMORY_KOS:
-            *params = _glFreeTextureMemory();
-        break;
-        case GL_USED_TEXTURE_MEMORY_KOS:
-            *params = _glUsedTextureMemory();
-        break;
-        case GL_FREE_CONTIGUOUS_TEXTURE_MEMORY_KOS:
-            *params = _glFreeContiguousTextureMemory();
-        break;
-    default:
-        _glKosThrowError(GL_INVALID_ENUM, __func__);
-        break;
-    }
-}
-
-const GLubyte *glGetString(GLenum name) {
-    switch(name) {
-        case GL_VENDOR:
-            return (const GLubyte*) "KallistiOS / Kazade";
-
-        case GL_RENDERER:
-            return (const GLubyte*) "PowerVR2 CLX2 100mHz";
-    }
-
-    return (const GLubyte*) "GL_KOS_ERROR: ENUM Unsupported\n";
-}
-
-
-Viewport VIEWPORT = {
-    0, 0, 640, 480, 320.0f, 240.0f, 320.0f, 240.0f
-};
-
-void _glInitMatrices() {
-    glViewport(0, 0, vid_mode->width, vid_mode->height);
-}
-
-/* Set the GL viewport */
-void APIENTRY glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
-    VIEWPORT.x = x;
-    VIEWPORT.y = y;
-    VIEWPORT.width   = width;
-    VIEWPORT.height  = height;
-    VIEWPORT.hwidth  = ((GLfloat) VIEWPORT.width) * 0.5f;
-    VIEWPORT.hheight = ((GLfloat) VIEWPORT.height) * 0.5f;
-    VIEWPORT.x_plus_hwidth  = VIEWPORT.x + VIEWPORT.hwidth;
-    VIEWPORT.y_plus_hheight = VIEWPORT.y + VIEWPORT.hheight;
+    dst->d1 = dst->d2 = 0xffffffff;
+    dst->d3 = dst->d4 = 0xffffffff;
 }

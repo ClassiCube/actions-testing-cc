@@ -21,8 +21,9 @@ jobs:
       - name: Compile Mac classic build
         id: compile
         run: |
-          make macclassic_68k RETRO68=/Retro68-build/toolchain
           make macclassic_ppc RETRO68=/Retro68-build/toolchain
+          make macclassic_68k RETRO68=/Retro68-build/toolchain
+          make macclassic_68k RETRO68=/Retro68-build/toolchain ARCH_68040=1
 
 
       - uses: ./.github/actions/notify_failure
@@ -35,11 +36,24 @@ jobs:
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
+          SOURCE_FILE: 'ClassiCube-ppc.dsk'
+          DEST_NAME: 'ClassiCube-ppc.dsk'
+
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
           SOURCE_FILE: 'ClassiCube-68k.dsk'
           DEST_NAME: 'ClassiCube-68k.dsk'
 
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
-          SOURCE_FILE: 'ClassiCube-ppc.dsk'
-          DEST_NAME: 'ClassiCube-ppc.dsk'
+          SOURCE_FILE: 'ClassiCube-68040.dsk'
+          DEST_NAME: 'ClassiCube-68040.dsk'
+          
+          
+      - uses: ./.github/actions/notify_success
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          DESTINATION_URL: '${{ secrets.NOTIFY_URL }}'
+          WORKFLOW_NAME: 'macclassic'

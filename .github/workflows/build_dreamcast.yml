@@ -15,21 +15,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: kazade/dreamcast-sdk
+      image: ghcr.io/kos-builds/kos-dc:sha-20149ee-14.2.0
     steps:
       - uses: actions/checkout@v4
       - name: Compile Dreamcast build
         id: compile
+        shell: bash
         run: |
           apt-get update
-          apt-get -y install mkisofs
-
-		  mkdir /opt/toolchains/dc/kos/utils
-		  wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/cdi4dc
-		  chmod +x cdi4dc
-		  mv cdi4dc /opt/toolchains/dc/kos/utils/cdi4dc
-
-          source /opt/toolchains/dc/kos/environ.sh
+          apt-get -y install genisoimage
+          wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/cdi4dc -O /opt/toolchains/dc/kos/utils/cdi4dc
+          chmod +x /opt/toolchains/dc/kos/utils/cdi4dc
           export PATH=/opt/toolchains/dc/kos/utils/:$PATH
           make dreamcast
           
@@ -46,6 +42,12 @@ jobs:
         with:
           SOURCE_FILE: 'ClassiCube-dc.cdi'
           DEST_NAME: 'ClassiCube-dc.cdi'
+          
+      - uses: ./.github/actions/upload_build
+        if: ${{ always() && steps.compile.outcome == 'success' }}
+        with:
+          SOURCE_FILE: 'ClassiCube-dc.iso'
+          DEST_NAME: 'ClassiCube-dc.iso'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}

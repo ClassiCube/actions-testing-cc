@@ -806,7 +806,7 @@ void Gfx_DrawVb_Lines(int verticesCount) {
 	//glDrawArrays(GL_LINES, 0, verticesCount);
 }
 
-void Gfx_DrawVb_IndexedTris_Range(int verticesCount, int startVertex) {
+void Gfx_DrawVb_IndexedTris_Range(int verticesCount, int startVertex, DrawHints hints) {
 	void* src;
 	if (gfx_format == VERTEX_FORMAT_TEXTURED) {
 		src = gfx_vertices + startVertex * SIZEOF_VERTEX_TEXTURED;
@@ -893,12 +893,12 @@ static void SubmitList(struct CommandsList* list) {
 
 void Gfx_EndFrame(void) {
 	FinishList();
-	pvr_wait_ready();
 
 	SubmitList(&listOP);
 	SubmitList(&listPT);
 	SubmitList(&listTR);
 	pvr_scene_finish();
+	pvr_wait_ready();
 }
 
 void Gfx_OnWindowResize(void) {
