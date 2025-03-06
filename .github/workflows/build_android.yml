@@ -128,8 +128,8 @@ jobs:
           LATEST_FLAG=-DCC_COMMIT_SHA=\"${GITHUB_SHA::9}\"
           
           DROID_FLAGS="-fPIC -shared -s -O1 -fvisibility=hidden -rdynamic -funwind-tables -DCC_GFX_BACKEND=CC_GFX_BACKEND_GL1"
-          DROID_LIBS="-lGLES_CM -lEGL -lm -landroid -llog"
-          LEGACY_FLAGS="-march=armv5 -rtlib=libgcc -L $ROOT_DIR/build-tools/runtime"		
+          DROID_LIBS="-lGLESv1_CM -lEGL -lm -landroid -llog"
+          LEGACY_FLAGS="-march=armv5 -rtlib=libgcc -L $PWD/build-tools/runtime"		
           
           ROOT_DIR=$PWD
           NDK_ROOT="/opt/android-sdk-linux/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
