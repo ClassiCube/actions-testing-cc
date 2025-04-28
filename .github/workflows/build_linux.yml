@@ -18,7 +18,9 @@ jobs:
 # =============== 32 BIT LINUX ==============
 # ===========================================
   build-32:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:18.04
     steps:
       - uses: actions/checkout@v4
       - name: Install packages
@@ -71,7 +73,9 @@ jobs:
 # =============== 64 BIT LINUX ==============
 # ===========================================
   build-64:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:18.04
     steps:
       - uses: actions/checkout@v4
       - name: Compile 64 bit Linux builds
