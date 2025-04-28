@@ -20,7 +20,7 @@ jobs:
   build-32:
     runs-on: ubuntu-latest
     container:
-      image: ubuntu:18.04
+      image: ubuntu:20.04
     steps:
       - uses: actions/checkout@v4
       - name: Install packages
@@ -75,7 +75,7 @@ jobs:
   build-64:
     runs-on: ubuntu-latest
     container:
-      image: ubuntu:18.04
+      image: ubuntu:20.04
     steps:
       - uses: actions/checkout@v4
       - name: Compile 64 bit Linux builds
