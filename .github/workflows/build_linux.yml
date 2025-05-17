@@ -86,7 +86,7 @@ jobs:
           NIX64_FLAGS:  "-no-pie -fno-pie -m64 -fvisibility=hidden -fcf-protection=none -rdynamic -DCC_BUILD_ICON -L lib -Wl,--unresolved-symbols=ignore-in-shared-libs"
         run: |
           apt-get -y update
-          apt-get -y install gcc wget
+          apt-get -y install gcc wget curl unzip
           wget https://github.com/ClassiCube/rpi-compiling-stuff/raw/main/linux64.zip
           unzip linux64.zip
           LATEST_FLAG=-DCC_COMMIT_SHA=\"$(git rev-parse --short "$GITHUB_SHA")\"  
