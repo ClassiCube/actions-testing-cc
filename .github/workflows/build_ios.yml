@@ -22,7 +22,7 @@ jobs:
           cd misc/ios
           sudo xcode-select -s /Applications/Xcode_14.1.app/Contents/Developer
           xcodebuild -project CCIOS.xcodeproj -showBuildSettings | grep ARCH
-          xcodebuild -sdk iphoneos -configuration Release CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          xcodebuild ARCHS="armv7 arm64" -sdk iphoneos -configuration Release CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
           cd build/Release-iphoneos
           mkdir Payload
           mv ClassiCube.app Payload/ClassiCube.app
