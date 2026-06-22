@@ -13,6 +13,9 @@ concurrency:
   group: ${{ github.ref }}-linux
   cancel-in-progress: true
 
+env:
+  TARGET_NAME: ${{ vars.TARGET_NAME || 'ClassiCube' }}
+
 jobs:
 #============================================
 # =============== 32 BIT LINUX ==============
@@ -55,13 +58,13 @@ jobs:
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'src/cc-nix32-gl1'
-          DEST_NAME: 'ClassiCube-Linux32-OpenGL'
+          DEST_NAME: '${{ env.TARGET_NAME }}-Linux32-OpenGL'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'src/cc-nix32-gl2'
-          DEST_NAME: 'ClassiCube-Linux32-ModernGL'
+          DEST_NAME: '${{ env.TARGET_NAME }}-Linux32-ModernGL'
           
           
       - uses: ./.github/actions/notify_success
@@ -112,19 +115,19 @@ jobs:
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'src/cc-nix64-gl1'
-          DEST_NAME: 'ClassiCube-Linux64-OpenGL'
+          DEST_NAME: '${{ env.TARGET_NAME }}-Linux64-OpenGL'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'src/cc-nix64-gl2'
-          DEST_NAME: 'ClassiCube-Linux64-ModernGL'
+          DEST_NAME: '${{ env.TARGET_NAME }}-Linux64-ModernGL'
           
       - uses: ./.github/actions/upload_build
         if: ${{ always() && steps.compile.outcome == 'success' }}
         with:
           SOURCE_FILE: 'src/cc-sdl64-gl2'
-          DEST_NAME: 'ClassiCube-Linux64-SDL2'
+          DEST_NAME: '${{ env.TARGET_NAME }}-Linux64-SDL2'
           
           
       - uses: ./.github/actions/notify_success
